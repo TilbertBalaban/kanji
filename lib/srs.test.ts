@@ -85,6 +85,18 @@ describe("checkMeaning", () => {
     expect(checkMeaning("floor", meanings, aux)).toBe("incorrect");
   });
 
+  it("accepts user synonyms (case/whitespace-insensitive)", () => {
+    expect(checkMeaning("dirt", meanings, [], ["dirt"])).toBe("correct");
+    expect(checkMeaning("  DIRT ", meanings, [], ["dirt"])).toBe("correct");
+    expect(checkMeaning("dirt", meanings, [], [])).toBe("incorrect");
+  });
+
+  it("lets user synonyms override a blacklist entry", () => {
+    const aux: AuxMeaning[] = [{ meaning: "soil", type: "blacklist" }];
+    expect(checkMeaning("soil", meanings, aux)).toBe("incorrect");
+    expect(checkMeaning("soil", meanings, aux, ["soil"])).toBe("correct");
+  });
+
   it("treats empty input as retry", () => {
     expect(checkMeaning("   ", meanings)).toBe("retry");
   });

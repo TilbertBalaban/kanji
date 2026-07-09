@@ -7,7 +7,12 @@ export async function POST(req: NextRequest) {
   if (response) return response;
 
   const body = await req.json();
-  const { subjectId, meaningIncorrectCount = 0, readingIncorrectCount = 0 } = body;
+  const {
+    subjectId,
+    meaningIncorrectCount = 0,
+    readingIncorrectCount = 0,
+    recallIncorrectCount = 0,
+  } = body;
   if (typeof subjectId !== "number") {
     return NextResponse.json({ error: "subjectId required" }, { status: 400 });
   }
@@ -17,6 +22,7 @@ export async function POST(req: NextRequest) {
       subjectId,
       meaningIncorrectCount,
       readingIncorrectCount,
+      recallIncorrectCount,
     );
     return NextResponse.json(result);
   } catch (e) {

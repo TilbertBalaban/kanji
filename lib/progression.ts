@@ -47,6 +47,7 @@ export async function completeReview(
   subjectId: number,
   meaningIncorrectCount: number,
   readingIncorrectCount: number,
+  recallIncorrectCount: number = 0,
 ) {
   const assignment = await prisma.assignment.findUnique({
     where: { userId_subjectId: { userId, subjectId } },
@@ -55,7 +56,7 @@ export async function completeReview(
     throw new Error(`No started assignment for subject ${subjectId}`);
   }
 
-  const incorrect = meaningIncorrectCount + readingIncorrectCount;
+  const incorrect = meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
   const startingStage = assignment.srsStage;
   const endingStage = nextStage(startingStage, incorrect);
   const now = new Date();
@@ -79,6 +80,7 @@ export async function completeReview(
         endingStage,
         meaningIncorrectCount,
         readingIncorrectCount,
+        recallIncorrectCount,
       },
     }),
   ]);

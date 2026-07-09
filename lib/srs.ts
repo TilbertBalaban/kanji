@@ -107,9 +107,15 @@ export function checkMeaning(
   input: string,
   meanings: Meaning[],
   auxMeanings: AuxMeaning[] = [],
+  userSynonyms: string[] = [],
 ): AnswerResult {
   const guess = normalize(input);
   if (!guess) return "retry";
+
+  // User synonyms are explicitly added by the user, so they win over the
+  // blacklist if the two ever overlap.
+  const synonyms = userSynonyms.map(normalize);
+  if (synonyms.includes(guess)) return "correct";
 
   for (const aux of auxMeanings) {
     if (aux.type === "blacklist" && normalize(aux.meaning) === guess) return "incorrect";
@@ -118,6 +124,7 @@ export function checkMeaning(
   const accepted = [
     ...meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning),
     ...auxMeanings.filter((a) => a.type === "whitelist").map((a) => a.meaning),
+    ...userSynonyms,
   ];
 
   for (const answer of accepted) {

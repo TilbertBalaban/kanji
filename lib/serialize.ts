@@ -21,9 +21,10 @@ export interface SubjectDTO {
   contextSentences: { en: string; ja: string }[];
   partsOfSpeech: string[];
   audioUrls: { url: string; contentType: string }[];
+  userSynonyms: string[]; // per-user extra accepted meanings
 }
 
-export function toSubjectDTO(s: Subject): SubjectDTO {
+export function toSubjectDTO(s: Subject, userSynonyms: string[] = []): SubjectDTO {
   return {
     id: s.id,
     type: s.type,
@@ -44,6 +45,7 @@ export function toSubjectDTO(s: Subject): SubjectDTO {
     contextSentences: s.contextSentences ? JSON.parse(s.contextSentences) : [],
     partsOfSpeech: s.partsOfSpeech ? JSON.parse(s.partsOfSpeech) : [],
     audioUrls: s.audioUrls ? JSON.parse(s.audioUrls) : [],
+    userSynonyms,
   };
 }
 

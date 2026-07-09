@@ -4,20 +4,27 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as wanakana from "wanakana";
 import { SubjectChar } from "@/components/SubjectChar";
+import { SynonymManager } from "@/components/SynonymManager";
 import { checkMeaning, checkReading, STAGE_NAMES } from "@/lib/srs";
 import type { SubjectDTO } from "@/lib/serialize";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
 
 type ReviewSubject = SubjectDTO & { srsStage: number };
-type TaskKind = "meaning" | "reading";
+// "recall" is the KaniWani-style reverse task: shown the English meaning, type the reading.
+type TaskKind = "meaning" | "reading" | "recall";
+
+const VOCAB_TYPES = new Set(["vocabulary", "kana_vocabulary"]);
 
 interface Item {
   subject: ReviewSubject;
   needsReading: boolean;
+  needsRecall: boolean;
   meaningDone: boolean;
   readingDone: boolean;
+  recallDone: boolean;
   meaningWrong: number;
   readingWrong: number;
+  recallWrong: number;
 }
 
 interface Toast {
@@ -29,11 +36,17 @@ function hasReadingTask(s: ReviewSubject): boolean {
   return s.type !== "radical" && s.readings.some((r) => r.acceptedAnswer);
 }
 
+// Reverse recall (English → reading) is offered for vocabulary that has a reading.
+function hasRecallTask(s: ReviewSubject): boolean {
+  return VOCAB_TYPES.has(s.type) && s.readings.some((r) => r.acceptedAnswer);
+}
+
 function pickTask(items: Item[]): { index: number; kind: TaskKind } | null {
   const open: { index: number; kind: TaskKind }[] = [];
   items.forEach((item, index) => {
     if (!item.meaningDone) open.push({ index, kind: "meaning" });
     if (item.needsReading && !item.readingDone) open.push({ index, kind: "reading" });
+    if (item.needsRecall && !item.recallDone) open.push({ index, kind: "recall" });
   });
   if (open.length === 0) return null;
   return open[Math.floor(Math.random() * open.length)];
@@ -56,10 +69,13 @@ export default function ReviewsPage() {
         const loaded: Item[] = data.subjects.map((subject) => ({
           subject,
           needsReading: hasReadingTask(subject),
+          needsRecall: hasRecallTask(subject),
           meaningDone: false,
           readingDone: false,
+          recallDone: false,
           meaningWrong: 0,
           readingWrong: 0,
+          recallWrong: 0,
         }));
         setItems(loaded);
         setTask(pickTask(loaded));
@@ -78,6 +94,7 @@ export default function ReviewsPage() {
         subjectId: item.subject.id,
         meaningIncorrectCount: item.meaningWrong,
         readingIncorrectCount: item.readingWrong,
+        recallIncorrectCount: item.recallWrong,
       }),
     });
     const result = await res.json();
@@ -107,9 +124,15 @@ export default function ReviewsPage() {
     }
 
     const item = items[task.index];
+    // Both "reading" and "recall" are answered with the reading in kana.
     const result =
       task.kind === "meaning"
-        ? checkMeaning(input, item.subject.meanings, item.subject.auxMeanings)
+        ? checkMeaning(
+            input,
+            item.subject.meanings,
+            item.subject.auxMeanings,
+            item.subject.userSynonyms,
+          )
         : checkReading(input, item.subject.readings);
 
     if (result === "retry") {
@@ -118,23 +141,28 @@ export default function ReviewsPage() {
       return;
     }
 
+    const doneKey =
+      task.kind === "meaning" ? "meaningDone" : task.kind === "reading" ? "readingDone" : "recallDone";
+    const wrongKey =
+      task.kind === "meaning" ? "meaningWrong" : task.kind === "reading" ? "readingWrong" : "recallWrong";
+
     if (result === "correct") {
       const updated = [...items];
-      const done = { ...item, [task.kind === "meaning" ? "meaningDone" : "readingDone"]: true };
+      const done = { ...item, [doneKey]: true };
       updated[task.index] = done;
       setItems(updated);
       setFeedback("correct");
-      if (done.meaningDone && (!done.needsReading || done.readingDone)) {
+      if (
+        done.meaningDone &&
+        (!done.needsReading || done.readingDone) &&
+        (!done.needsRecall || done.recallDone)
+      ) {
         setCompleted((c) => c + 1);
         void submitCompleted(done);
       }
     } else {
       const updated = [...items];
-      updated[task.index] = {
-        ...item,
-        [task.kind === "meaning" ? "meaningWrong" : "readingWrong"]:
-          (task.kind === "meaning" ? item.meaningWrong : item.readingWrong) + 1,
-      };
+      updated[task.index] = { ...item, [wrongKey]: item[wrongKey] + 1 };
       setItems(updated);
       setSessionWrong((w) => w + 1);
       setFeedback("incorrect");
@@ -176,7 +204,15 @@ export default function ReviewsPage() {
   const current = items[task.index];
   const subject = current.subject;
   const color = TYPE_COLORS[subject.type];
-  const isReading = task.kind === "reading";
+  const isRecall = task.kind === "recall";
+  // Reading and recall are both answered with the reading in kana.
+  const wantsKana = task.kind === "reading" || task.kind === "recall";
+  const acceptedMeanings = subject.meanings.filter((m) => m.acceptedAnswer);
+  const promptMeaning =
+    acceptedMeanings.find((m) => m.primary)?.meaning ?? acceptedMeanings[0]?.meaning ?? "";
+  const extraMeanings = acceptedMeanings
+    .filter((m) => m.meaning !== promptMeaning)
+    .map((m) => m.meaning);
 
   const feedbackClasses =
     feedback === "correct"
@@ -204,18 +240,28 @@ export default function ReviewsPage() {
 
       <div className="overflow-hidden rounded-xl shadow">
         <div
-          className="flex min-h-48 items-center justify-center p-8 text-white"
+          className="subject-tile flex min-h-48 items-center justify-center p-8"
           style={{ backgroundColor: color }}
         >
-          <SubjectChar
-            characters={subject.characters}
-            characterImage={subject.characterImage}
-            className="text-7xl font-medium"
-          />
+          {isRecall ? (
+            <div className="text-center">
+              <p className="text-4xl font-medium leading-snug">{promptMeaning}</p>
+              {extraMeanings.length > 0 && (
+                <p className="mt-2 text-lg opacity-80">{extraMeanings.join(", ")}</p>
+              )}
+            </div>
+          ) : (
+            <SubjectChar
+              characters={subject.characters}
+              characterImage={subject.characterImage}
+              className="text-7xl font-medium"
+            />
+          )}
         </div>
         <div className="bg-slate-800 py-2 text-center text-sm text-white">
           {TYPE_LABELS[subject.type]}{" "}
-          <span className="font-bold">{isReading ? "Reading" : "Meaning"}</span>
+          <span className="font-bold">{task.kind === "meaning" ? "Meaning" : "Reading"}</span>
+          {isRecall && <span className="text-slate-400"> · from English</span>}
         </div>
         <div className={`border-t-4 transition-colors ${feedbackClasses}`}>
           <input
@@ -223,12 +269,12 @@ export default function ReviewsPage() {
             value={input}
             onChange={(e) => {
               const raw = e.target.value;
-              setInput(isReading ? wanakana.toKana(raw, { IMEMode: true }) : raw);
+              setInput(wantsKana ? wanakana.toKana(raw, { IMEMode: true }) : raw);
             }}
             onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            placeholder={isReading ? "答え (kana)" : "Your answer (English)"}
+            placeholder={wantsKana ? "答え (kana)" : "Your answer (English)"}
             className="w-full bg-transparent p-4 text-center text-xl outline-none"
-            lang={isReading ? "ja" : "en"}
+            lang={wantsKana ? "ja" : "en"}
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
@@ -246,7 +292,7 @@ export default function ReviewsPage() {
         <div className="mt-3 rounded-lg bg-red-50 p-4 text-center text-sm">
           <p className="font-medium text-red-700">Incorrect — press Enter to continue.</p>
           <p className="mt-1 text-slate-600">
-            {isReading
+            {wantsKana
               ? `Reading: ${subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ")}`
               : `Meaning: ${subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}`}
           </p>
@@ -257,6 +303,27 @@ export default function ReviewsPage() {
           >
             View item details
           </Link>
+          {task.kind === "meaning" && (
+            <div className="mt-3 border-t border-red-200 pt-3 text-left">
+              <SynonymManager
+                key={subject.id}
+                subjectId={subject.id}
+                initialSynonyms={subject.userSynonyms}
+                onChange={(synonyms) => {
+                  setItems((prev) => {
+                    if (!prev) return prev;
+                    const next = [...prev];
+                    const it = next[task.index];
+                    next[task.index] = {
+                      ...it,
+                      subject: { ...it.subject, userSynonyms: synonyms },
+                    };
+                    return next;
+                  });
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
       {feedback === "correct" && (

@@ -7,6 +7,7 @@ import {
 } from "@/lib/progression";
 import { toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
+import { synonymsBySubject } from "@/lib/synonyms";
 
 export const dynamic = "force-dynamic";
 
@@ -48,11 +49,53 @@ export async function GET(req: NextRequest) {
     );
   });
 
+  const batchAssignments = assignments.slice(0, batch);
+  const synonyms = await synonymsBySubject(
+    userId,
+    batchAssignments.map((a) => a.subjectId),
+  );
+  const dtos = batchAssignments.map((a) =>
+    toSubjectDTO(a.subject, synonyms.get(a.subjectId) ?? []),
+  );
+
+  // Fetch the related subjects (components + amalgamations) referenced by this
+  // batch in one query, so the lesson tabs can show radical/kanji composition
+  // and example vocabulary without extra round-trips.
+  const relatedIds = [
+    ...new Set(dtos.flatMap((d) => [...d.componentIds, ...d.amalgamationIds])),
+  ];
+  const relatedSubjects = relatedIds.length
+    ? await prisma.subject.findMany({ where: { id: { in: relatedIds } } })
+    : [];
+  const relatedMap = new Map(
+    relatedSubjects.map((r) => {
+      const meanings = JSON.parse(r.meanings) as { meaning: string; primary: boolean }[];
+      const readings = JSON.parse(r.readings) as { reading: string; primary: boolean }[];
+      return [
+        r.id,
+        {
+          id: r.id,
+          type: r.type,
+          characters: r.characters,
+          characterImage: r.characterImage,
+          primaryMeaning: meanings.find((m) => m.primary)?.meaning ?? meanings[0]?.meaning ?? "",
+          primaryReading: readings.find((m) => m.primary)?.reading ?? readings[0]?.reading ?? null,
+        },
+      ];
+    }),
+  );
+
+  const subjects = dtos.map((d) => ({
+    ...d,
+    components: d.componentIds.map((id) => relatedMap.get(id)).filter(Boolean),
+    amalgamations: d.amalgamationIds.map((id) => relatedMap.get(id)).filter(Boolean),
+  }));
+
   return NextResponse.json({
     total: assignments.length,
     doneToday,
     dailyLimit: DAILY_LESSON_LIMIT,
     extraBatchSize: EXTRA_LESSON_BATCH,
-    subjects: assignments.slice(0, batch).map((a) => toSubjectDTO(a.subject)),
+    subjects,
   });
 }

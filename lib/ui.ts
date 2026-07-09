@@ -1,10 +1,11 @@
 // Shared client-side display helpers: colors per subject type and SRS stage.
 
+// Official WaniKani brand colors (radical blue, kanji pink, vocabulary purple).
 export const TYPE_COLORS: Record<string, string> = {
-  radical: "#00aaff",
-  kanji: "#ff00aa",
-  vocabulary: "#9e00ff",
-  kana_vocabulary: "#9e00ff",
+  radical: "#00a1f1",
+  kanji: "#f100a1",
+  vocabulary: "#a100f1",
+  kana_vocabulary: "#a100f1",
 };
 
 export const TYPE_LABELS: Record<string, string> = {

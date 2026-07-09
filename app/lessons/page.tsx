@@ -5,24 +5,46 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as wanakana from "wanakana";
 import { MnemonicText } from "@/components/MnemonicText";
 import { SubjectChar } from "@/components/SubjectChar";
+import { SynonymManager } from "@/components/SynonymManager";
 import { checkMeaning, checkReading } from "@/lib/srs";
 import type { SubjectDTO } from "@/lib/serialize";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
 
 type Phase = "loading" | "learn" | "quiz" | "empty" | "limit";
-type TaskKind = "meaning" | "reading";
+// "recall" is the KaniWani-style reverse task: shown the English meaning, type the reading.
+type TaskKind = "meaning" | "reading" | "recall";
+
+const VOCAB_TYPES = new Set(["vocabulary", "kana_vocabulary"]);
+
+interface RelatedSubject {
+  id: number;
+  type: string;
+  characters: string | null;
+  characterImage: string | null;
+  primaryMeaning: string;
+  primaryReading: string | null;
+}
+
+interface LessonSubject extends SubjectDTO {
+  components: RelatedSubject[];
+  amalgamations: RelatedSubject[];
+}
 
 interface QuizTask {
-  subject: SubjectDTO;
+  subject: LessonSubject;
   kind: TaskKind;
 }
 
-function buildQuizTasks(subjects: SubjectDTO[]): QuizTask[] {
+function buildQuizTasks(subjects: LessonSubject[]): QuizTask[] {
   const tasks: QuizTask[] = [];
   for (const subject of subjects) {
     tasks.push({ subject, kind: "meaning" });
     if (subject.type !== "radical" && subject.readings.some((r) => r.acceptedAnswer)) {
       tasks.push({ subject, kind: "reading" });
+    }
+    // Reverse recall (English → reading) for vocabulary that has a reading.
+    if (VOCAB_TYPES.has(subject.type) && subject.readings.some((r) => r.acceptedAnswer)) {
+      tasks.push({ subject, kind: "recall" });
     }
   }
   // shuffle
@@ -33,11 +55,69 @@ function buildQuizTasks(subjects: SubjectDTO[]): QuizTask[] {
   return tasks;
 }
 
+type TabKey = "composition" | "meaning" | "reading" | "context";
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+}
+
+// WaniKani shows a different set of info tabs per subject type. Composition and
+// examples/context tabs are omitted when the subject has no data for them.
+function buildTabs(subject: LessonSubject): TabDef[] {
+  const tabs: TabDef[] = [];
+  const isVocab = subject.type === "vocabulary" || subject.type === "kana_vocabulary";
+  const hasReadings = subject.readings.some((r) => r.acceptedAnswer);
+
+  if (subject.type === "kanji" && subject.components.length > 0) {
+    tabs.push({ key: "composition", label: "Radicals" });
+  } else if (isVocab && subject.components.length > 0) {
+    tabs.push({ key: "composition", label: "Kanji Composition" });
+  }
+
+  tabs.push({ key: "meaning", label: "Meaning" });
+
+  if (hasReadings) {
+    tabs.push({ key: "reading", label: subject.type === "kanji" ? "Readings" : "Reading" });
+  }
+
+  if (isVocab && subject.contextSentences.length > 0) {
+    tabs.push({ key: "context", label: "Context" });
+  } else if (subject.amalgamations.length > 0) {
+    tabs.push({ key: "context", label: "Examples" });
+  }
+
+  return tabs;
+}
+
+function RelatedGrid({ items }: { items: RelatedSubject[] }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      {items.map((r) => (
+        <Link
+          key={r.id}
+          href={`/subjects/${r.id}`}
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-white shadow-sm hover:opacity-90"
+          style={{ backgroundColor: TYPE_COLORS[r.type] }}
+        >
+          <SubjectChar
+            characters={r.characters}
+            characterImage={r.characterImage}
+            className="text-2xl font-medium"
+          />
+          <span className="text-sm">{r.primaryMeaning}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 export default function LessonsPage() {
   const [phase, setPhase] = useState<Phase>("loading");
-  const [subjects, setSubjects] = useState<SubjectDTO[]>([]);
+  const [subjects, setSubjects] = useState<LessonSubject[]>([]);
   const [totalAvailable, setTotalAvailable] = useState(0);
   const [slide, setSlide] = useState(0);
+  const [tab, setTab] = useState(0);
   const [quiz, setQuiz] = useState<QuizTask[]>([]);
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<"idle" | "correct" | "incorrect" | "retry">("idle");
@@ -56,7 +136,7 @@ export default function LessonsPage() {
           doneToday: number;
           dailyLimit: number;
           extraBatchSize: number;
-          subjects: SubjectDTO[];
+          subjects: LessonSubject[];
         }) => {
           setTotalAvailable(data.total);
           setDoneToday(data.doneToday);
@@ -64,6 +144,7 @@ export default function LessonsPage() {
           setExtraBatchSize(data.extraBatchSize);
           setSubjects(data.subjects);
           setSlide(0);
+          setTab(0);
           setInput("");
           setFeedback("idle");
           if (data.subjects.length > 0) setPhase("learn");
@@ -113,9 +194,15 @@ export default function LessonsPage() {
       return;
     }
 
+    // Both "reading" and "recall" are answered with the reading in kana.
     const result =
       task.kind === "meaning"
-        ? checkMeaning(input, task.subject.meanings, task.subject.auxMeanings)
+        ? checkMeaning(
+            input,
+            task.subject.meanings,
+            task.subject.auxMeanings,
+            task.subject.userSynonyms,
+          )
         : checkReading(input, task.subject.readings);
 
     if (result === "retry") {
@@ -168,6 +255,30 @@ export default function LessonsPage() {
     const subject = subjects[slide];
     const color = TYPE_COLORS[subject.type];
     const acceptedReadings = subject.readings.filter((r) => r.acceptedAnswer);
+    const tabs = buildTabs(subject);
+    const activeTab = tabs[Math.min(tab, tabs.length - 1)];
+    const isVocab = subject.type === "vocabulary" || subject.type === "kana_vocabulary";
+    const isLast = slide === subjects.length - 1;
+    const onLastTab = tab >= tabs.length - 1;
+
+    const goPrev = () => {
+      if (tab > 0) setTab((t) => t - 1);
+      else if (slide > 0) {
+        const prev = buildTabs(subjects[slide - 1]);
+        setSlide((s) => s - 1);
+        setTab(prev.length - 1);
+      }
+    };
+    const goNext = () => {
+      if (!onLastTab) setTab((t) => t + 1);
+      else if (!isLast) {
+        setSlide((s) => s + 1);
+        setTab(0);
+      } else {
+        startQuiz();
+      }
+    };
+
     return (
       <div className="mx-auto max-w-2xl">
         <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
@@ -179,7 +290,7 @@ export default function LessonsPage() {
 
         <div className="overflow-hidden rounded-xl bg-white shadow">
           <div
-            className="flex min-h-40 items-center justify-center p-8 text-white"
+            className="subject-tile flex min-h-40 flex-col items-center justify-center gap-2 p-8"
             style={{ backgroundColor: color }}
           >
             <SubjectChar
@@ -187,66 +298,137 @@ export default function LessonsPage() {
               characterImage={subject.characterImage}
               className="text-7xl font-medium"
             />
-          </div>
-          <div className="space-y-5 p-6">
-            <div>
-              <span
-                className="rounded px-2 py-0.5 text-xs font-semibold text-white"
-                style={{ backgroundColor: color }}
-              >
-                {TYPE_LABELS[subject.type]} · Level {subject.level}
-              </span>
+            <div className="text-lg text-white opacity-90">
+              {subject.meanings.find((m) => m.primary)?.meaning}
             </div>
+          </div>
 
-            <section>
-              <h2 className="text-sm font-semibold uppercase text-slate-400">Meaning</h2>
-              <p className="text-xl font-medium">
-                {subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}
-              </p>
-              {subject.mnemonicImage && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={subject.mnemonicImage}
-                  alt={`${TYPE_LABELS[subject.type]} mnemonic`}
-                  className="mx-auto my-3 max-h-56 rounded-lg border border-slate-200"
-                />
-              )}
-              <div className="mt-2 text-slate-700">
-                <MnemonicText text={subject.meaningMnemonic} />
-              </div>
-              {subject.meaningHint && (
-                <p className="mt-2 rounded bg-slate-50 p-2 text-sm text-slate-500">
-                  Hint: {subject.meaningHint}
-                </p>
-              )}
-            </section>
+          {/* Tab bar */}
+          <div className="flex justify-center gap-6 bg-slate-800 px-4 text-sm font-medium">
+            {tabs.map((t, i) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(i)}
+                className={`relative py-3 transition-colors ${
+                  i === tab
+                    ? "text-white after:absolute after:-bottom-px after:left-1/2 after:h-2 after:w-2 after:-translate-x-1/2 after:rotate-45 after:bg-white after:content-['']"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-            {acceptedReadings.length > 0 && (
+          <div className="min-h-48 p-6">
+            {activeTab.key === "composition" && (
               <section>
-                <h2 className="text-sm font-semibold uppercase text-slate-400">Reading</h2>
-                <p className="text-xl font-medium">
-                  {acceptedReadings.map((r) => r.reading).join("、")}
+                <h2 className="mb-3 text-lg font-semibold">
+                  {isVocab ? "Kanji Composition" : "Radical Composition"}
+                </h2>
+                <p className="mb-4 text-slate-600">
+                  {isVocab
+                    ? `This vocabulary is composed of ${subject.components.length === 1 ? "one kanji" : `${subject.components.length} kanji`}:`
+                    : `This kanji is composed of ${subject.components.length === 1 ? "one radical" : `${subject.components.length} radicals`}:`}
                 </p>
+                <RelatedGrid items={subject.components} />
+              </section>
+            )}
+
+            {activeTab.key === "meaning" && (
+              <section>
+                <h2 className="mb-2 text-lg font-semibold">Meaning</h2>
+                <p className="text-xl font-medium">
+                  {subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}
+                </p>
+                {subject.mnemonicImage && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={subject.mnemonicImage}
+                    alt={`${TYPE_LABELS[subject.type]} mnemonic`}
+                    className="mx-auto my-3 max-h-56 rounded-lg border border-slate-200"
+                  />
+                )}
+                <div className="mt-2 text-slate-700">
+                  <MnemonicText text={subject.meaningMnemonic} />
+                </div>
+                {subject.meaningHint && (
+                  <p className="mt-2 rounded bg-slate-50 p-2 text-sm text-slate-500">
+                    Hint: {subject.meaningHint}
+                  </p>
+                )}
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  <SynonymManager
+                    key={subject.id}
+                    subjectId={subject.id}
+                    initialSynonyms={subject.userSynonyms}
+                    onChange={(synonyms) =>
+                      setSubjects((prev) =>
+                        prev.map((s) =>
+                          s.id === subject.id ? { ...s, userSynonyms: synonyms } : s,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              </section>
+            )}
+
+            {activeTab.key === "reading" && (
+              <section>
+                <h2 className="mb-2 text-lg font-semibold">
+                  {subject.type === "kanji" ? "Readings" : "Reading"}
+                </h2>
+                <p className="text-xl font-medium" lang="ja">
+                  {acceptedReadings
+                    .map((r) => `${r.reading}${r.type ? ` (${r.type})` : ""}`)
+                    .join("、")}
+                </p>
+                {subject.audioUrls.length > 0 && (
+                  <button
+                    onClick={() => new Audio(subject.audioUrls[0].url).play()}
+                    className="mt-3 rounded-lg bg-slate-800 px-4 py-1.5 text-sm text-white hover:bg-slate-700"
+                  >
+                    ▶ Play audio
+                  </button>
+                )}
                 {subject.readingMnemonic && (
-                  <div className="mt-2 text-slate-700">
+                  <div className="mt-3 text-slate-700">
                     <MnemonicText text={subject.readingMnemonic} />
                   </div>
+                )}
+                {subject.readingHint && (
+                  <p className="mt-2 rounded bg-slate-50 p-2 text-sm text-slate-500">
+                    Hint: {subject.readingHint}
+                  </p>
                 )}
               </section>
             )}
 
-            {subject.contextSentences.length > 0 && (
+            {activeTab.key === "context" && activeTab.label === "Context" && (
               <section>
-                <h2 className="text-sm font-semibold uppercase text-slate-400">
-                  Context sentences
-                </h2>
-                {subject.contextSentences.slice(0, 2).map((s, i) => (
-                  <p key={i} className="mt-1 text-sm">
-                    <span lang="ja">{s.ja}</span>
+                <h2 className="mb-3 text-lg font-semibold">Context Sentences</h2>
+                {subject.contextSentences.map((s, i) => (
+                  <p key={i} className="mb-3 text-sm">
+                    <span lang="ja" className="text-base">
+                      {s.ja}
+                    </span>
                     <br />
                     <span className="text-slate-500">{s.en}</span>
                   </p>
                 ))}
+              </section>
+            )}
+
+            {activeTab.key === "context" && activeTab.label === "Examples" && (
+              <section>
+                <h2 className="mb-3 text-lg font-semibold">Examples</h2>
+                <p className="mb-4 text-slate-600">
+                  {subject.type === "radical"
+                    ? "Kanji that use this radical:"
+                    : "Vocabulary that use this kanji:"}
+                </p>
+                <RelatedGrid items={subject.amalgamations} />
               </section>
             )}
           </div>
@@ -254,27 +436,22 @@ export default function LessonsPage() {
 
         <div className="mt-4 flex justify-between">
           <button
-            onClick={() => setSlide((s) => Math.max(0, s - 1))}
-            disabled={slide === 0}
+            onClick={goPrev}
+            disabled={slide === 0 && tab === 0}
             className="rounded-lg bg-slate-200 px-5 py-2 disabled:opacity-40"
           >
             ← Back
           </button>
-          {slide < subjects.length - 1 ? (
-            <button
-              onClick={() => setSlide((s) => s + 1)}
-              className="rounded-lg bg-sky-600 px-5 py-2 text-white hover:bg-sky-700"
-            >
-              Next →
-            </button>
-          ) : (
-            <button
-              onClick={startQuiz}
-              className="rounded-lg bg-pink-600 px-5 py-2 text-white hover:bg-pink-700"
-            >
-              Start quiz
-            </button>
-          )}
+          <button
+            onClick={goNext}
+            className={`rounded-lg px-5 py-2 text-white ${
+              onLastTab && isLast
+                ? "bg-pink-600 hover:bg-pink-700"
+                : "bg-sky-600 hover:bg-sky-700"
+            }`}
+          >
+            {onLastTab && isLast ? "Start quiz" : "Next →"}
+          </button>
         </div>
       </div>
     );
@@ -283,8 +460,16 @@ export default function LessonsPage() {
   // phase === "quiz"
   const task = quiz[0];
   if (!task) return <p className="text-slate-500">Saving…</p>;
-  const isReading = task.kind === "reading";
+  const isRecall = task.kind === "recall";
+  // Reading and recall are both answered with the reading in kana.
+  const wantsKana = task.kind === "reading" || task.kind === "recall";
   const color = TYPE_COLORS[task.subject.type];
+  const acceptedMeanings = task.subject.meanings.filter((m) => m.acceptedAnswer);
+  const promptMeaning =
+    acceptedMeanings.find((m) => m.primary)?.meaning ?? acceptedMeanings[0]?.meaning ?? "";
+  const extraMeanings = acceptedMeanings
+    .filter((m) => m.meaning !== promptMeaning)
+    .map((m) => m.meaning);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -293,18 +478,28 @@ export default function LessonsPage() {
       </p>
       <div className="overflow-hidden rounded-xl shadow">
         <div
-          className="flex min-h-40 items-center justify-center p-8 text-white"
+          className="subject-tile flex min-h-40 items-center justify-center p-8"
           style={{ backgroundColor: color }}
         >
-          <SubjectChar
-            characters={task.subject.characters}
-            characterImage={task.subject.characterImage}
-            className="text-6xl font-medium"
-          />
+          {isRecall ? (
+            <div className="text-center">
+              <p className="text-4xl font-medium leading-snug">{promptMeaning}</p>
+              {extraMeanings.length > 0 && (
+                <p className="mt-2 text-lg opacity-80">{extraMeanings.join(", ")}</p>
+              )}
+            </div>
+          ) : (
+            <SubjectChar
+              characters={task.subject.characters}
+              characterImage={task.subject.characterImage}
+              className="text-6xl font-medium"
+            />
+          )}
         </div>
         <div className="bg-slate-800 py-2 text-center text-sm text-white">
           {TYPE_LABELS[task.subject.type]}{" "}
-          <span className="font-bold">{isReading ? "Reading" : "Meaning"}</span>
+          <span className="font-bold">{task.kind === "meaning" ? "Meaning" : "Reading"}</span>
+          {isRecall && <span className="text-slate-400"> · from English</span>}
         </div>
         <div
           className={`border-t-4 ${
@@ -322,10 +517,10 @@ export default function LessonsPage() {
             value={input}
             onChange={(e) => {
               const raw = e.target.value;
-              setInput(isReading ? wanakana.toKana(raw, { IMEMode: true }) : raw);
+              setInput(wantsKana ? wanakana.toKana(raw, { IMEMode: true }) : raw);
             }}
             onKeyDown={(e) => e.key === "Enter" && handleQuizSubmit()}
-            placeholder={isReading ? "答え (kana)" : "Your answer (English)"}
+            placeholder={wantsKana ? "答え (kana)" : "Your answer (English)"}
             className="w-full bg-transparent p-4 text-center text-xl outline-none"
             autoComplete="off"
             autoCorrect="off"
@@ -336,7 +531,7 @@ export default function LessonsPage() {
       {feedback === "incorrect" && (
         <p className="mt-3 text-center text-sm text-red-600">
           Not quite —{" "}
-          {isReading
+          {wantsKana
             ? task.subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ")
             : task.subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}
           . Press Enter; it will come around again.

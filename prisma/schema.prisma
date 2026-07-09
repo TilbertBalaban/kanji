@@ -32,10 +32,25 @@ model Subject {
   audioUrls      String? // vocab: [{ url, contentType }]
   lessonPosition Int      @default(0)
 
-  assignments Assignment[]
-  reviewLogs  ReviewLog[]
+  assignments  Assignment[]
+  reviewLogs   ReviewLog[]
+  userSynonyms UserSynonym[]
 
   @@index([level, type])
+}
+
+// Per-user extra accepted meanings for a subject (WaniKani "User Synonyms").
+// One row per (user, subject, synonym).
+model UserSynonym {
+  id        Int      @id @default(autoincrement())
+  userId    String // "Tilbert" | "Kate" — see lib/users.ts
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+  synonym   String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, subjectId, synonym])
+  @@index([userId, subjectId])
 }
 
 // Per-user SRS state for a subject. One row per (user, subject).
@@ -67,6 +82,7 @@ model ReviewLog {
   endingStage           Int
   meaningIncorrectCount Int      @default(0)
   readingIncorrectCount Int      @default(0)
+  recallIncorrectCount  Int      @default(0) // English → reading (KaniWani-style) wrong attempts
 
   @@index([createdAt])
   @@index([userId])

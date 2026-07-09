@@ -20,10 +20,13 @@ export async function GET() {
   const byType: Record<string, { total: number; correct: number }> = {};
 
   for (const log of logs) {
-    // Each review has a meaning answer, and a reading answer unless radical.
-    const hasReading = log.subject.type !== "radical";
-    const answers = hasReading ? 2 : 1;
-    const wrong = log.meaningIncorrectCount + log.readingIncorrectCount;
+    // Each review has a meaning answer, a reading answer unless radical, and a
+    // recall answer (English → reading, KaniWani-style) for vocabulary.
+    const isVocab =
+      log.subject.type === "vocabulary" || log.subject.type === "kana_vocabulary";
+    const answers = 1 + (log.subject.type !== "radical" ? 1 : 0) + (isVocab ? 1 : 0);
+    const wrong =
+      log.meaningIncorrectCount + log.readingIncorrectCount + log.recallIncorrectCount;
     totalAnswers += answers + wrong;
     correctAnswers += answers;
 
@@ -44,7 +47,7 @@ export async function GET() {
       createdAt: l.createdAt,
       startingStage: l.startingStage,
       endingStage: l.endingStage,
-      incorrect: l.meaningIncorrectCount + l.readingIncorrectCount,
+      incorrect: l.meaningIncorrectCount + l.readingIncorrectCount + l.recallIncorrectCount,
     })),
   });
 }

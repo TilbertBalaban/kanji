@@ -64,7 +64,11 @@ export async function GET() {
     where: {
       userId,
       createdAt: { gte: dayAgo },
-      OR: [{ meaningIncorrectCount: { gt: 0 } }, { readingIncorrectCount: { gt: 0 } }],
+      OR: [
+        { meaningIncorrectCount: { gt: 0 } },
+        { readingIncorrectCount: { gt: 0 } },
+        { recallIncorrectCount: { gt: 0 } },
+      ],
     },
     orderBy: { createdAt: "desc" },
     select: {

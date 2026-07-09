@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { MnemonicText } from "@/components/MnemonicText";
 import { SubjectChar } from "@/components/SubjectChar";
+import { SynonymManager } from "@/components/SynonymManager";
 import type { SubjectDTO } from "@/lib/serialize";
 import { STAGE_NAMES } from "@/lib/srs";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
@@ -89,7 +90,7 @@ export default function SubjectPage({ params }: { params: Promise<{ id: string }
     <div className="space-y-6">
       <div className="overflow-hidden rounded-xl shadow">
         <div
-          className="flex flex-col items-center justify-center gap-2 p-10 text-white"
+          className="subject-tile flex flex-col items-center justify-center gap-2 p-10"
           style={{ backgroundColor: color }}
         >
           <SubjectChar
@@ -138,6 +139,9 @@ export default function SubjectPage({ params }: { params: Promise<{ id: string }
             Hint: {subject.meaningHint}
           </p>
         )}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <SynonymManager subjectId={subject.id} initialSynonyms={subject.userSynonyms} />
+        </div>
       </section>
 
       {acceptedReadings.length > 0 && (

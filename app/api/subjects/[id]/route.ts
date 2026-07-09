@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
+import { synonymsBySubject } from "@/lib/synonyms";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,8 @@ export async function GET(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  const dto = toSubjectDTO(subject);
+  const synonyms = await synonymsBySubject(userId, [subject.id]);
+  const dto = toSubjectDTO(subject, synonyms.get(subject.id) ?? []);
   const related = await prisma.subject.findMany({
     where: { id: { in: [...dto.componentIds, ...dto.amalgamationIds] } },
     include: { assignments: { where: { userId }, select: { srsStage: true } } },
