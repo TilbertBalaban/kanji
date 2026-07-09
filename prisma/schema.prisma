@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled connection (Neon "-pooler") for the app runtime
+  directUrl = env("DIRECT_URL") // direct connection for migrations (falls back to DATABASE_URL locally)
+}
+
+model Subject {
+  id             Int      @id // WaniKani subject id
+  type           String // "radical" | "kanji" | "vocabulary" | "kana_vocabulary"
+  level          Int
+  characters     String? // null for image-only radicals
+  characterImage String? // fallback image URL for image-only radicals
+  mnemonicImage  String? // local path to mnemonic artwork (radicals), e.g. /radical-images/prison.png
+  slug           String
+  documentUrl    String
+  // JSON-encoded arrays/objects (SQLite has no native JSON columns in Prisma)
+  meanings       String // [{ meaning, primary, acceptedAnswer }]
+  auxMeanings    String // [{ meaning, type: "whitelist"|"blacklist" }]
+  readings       String // [{ reading, primary, acceptedAnswer, type? }]
+  componentIds   String // [subjectId] — radicals for kanji, kanji for vocab
+  amalgamationIds String // [subjectId] — reverse links ("found in")
+  meaningMnemonic String
+  meaningHint    String?
+  readingMnemonic String?
+  readingHint    String?
+  contextSentences String? // vocab: [{ en, ja }]
+  partsOfSpeech  String? // vocab: [string]
+  audioUrls      String? // vocab: [{ url, contentType }]
+  lessonPosition Int      @default(0)
+
+  assignments Assignment[]
+  reviewLogs  ReviewLog[]
+
+  @@index([level, type])
+}
+
+// Per-user SRS state for a subject. One row per (user, subject).
+model Assignment {
+  id          Int       @id @default(autoincrement())
+  userId      String // "Tilbert" | "Kate" — see lib/users.ts
+  subjectId   Int
+  subject     Subject   @relation(fields: [subjectId], references: [id])
+  srsStage    Int       @default(0) // 0 = lesson not taken, 1-4 Apprentice, 5-6 Guru, 7 Master, 8 Enlightened, 9 Burned
+  unlockedAt  DateTime?
+  startedAt   DateTime? // lesson completed
+  availableAt DateTime? // next review due
+  passedAt    DateTime? // first reached Guru
+  burnedAt    DateTime?
+
+  @@unique([userId, subjectId])
+  @@index([availableAt])
+  @@index([srsStage])
+  @@index([userId])
+}
+
+model ReviewLog {
+  id                    Int      @id @default(autoincrement())
+  userId                String // "Tilbert" | "Kate" — see lib/users.ts
+  subjectId             Int
+  subject               Subject  @relation(fields: [subjectId], references: [id])
+  createdAt             DateTime @default(now())
+  startingStage         Int
+  endingStage           Int
+  meaningIncorrectCount Int      @default(0)
+  readingIncorrectCount Int      @default(0)
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model UserProgress {
+  userId       String @id // "Tilbert" | "Kate" — see lib/users.ts
+  currentLevel Int    @default(1)
+}

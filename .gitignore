@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env
+/public/radical-images/
+
+# legacy local SQLite db (app uses Postgres now)
+prisma/dev.db
+prisma/dev.db-journal
+
+# keep the documented example env committed
+!.env.example

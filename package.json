@@ -4,23 +4,35 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "postinstall": "prisma generate",
+    "lint": "eslint",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed": "tsx --env-file=.env scripts/seed.ts",
+    "test": "vitest run",
+    "fetch:radical-images": "tsx --env-file=.env scripts/fetch-radical-images.ts",
+    "fetch:radical-character-images": "tsx --env-file=.env scripts/fetch-radical-character-images.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "next": "16.2.10",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "wanakana": "^5.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.0",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
