@@ -1,15 +1,10 @@
-"use client";
-
-import { use } from "react";
+import { Suspense } from "react";
 import { SubjectTypeBrowser } from "@/components/SubjectTypeBrowser";
 
-export default function KanjiPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ levels?: string }>;
-}) {
-  const { levels } = use(searchParams);
+export default function KanjiPage() {
   return (
-    <SubjectTypeBrowser type="kanji" title="Kanji" basePath="/kanji" levels={levels ?? "1-10"} />
+    <Suspense>
+      <SubjectTypeBrowser type="kanji" title="Kanji" basePath="/kanji" />
+    </Suspense>
   );
 }

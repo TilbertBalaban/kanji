@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type CSSProperties } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
 import { LEVEL_RANGES } from "@/components/TypeNavDropdown";
@@ -43,13 +44,12 @@ export function SubjectTypeBrowser({
   type,
   title,
   basePath,
-  levels,
 }: {
   type: "radical" | "kanji" | "vocabulary";
   title: string;
   basePath: string;
-  levels: string;
 }) {
+  const levels = useSearchParams().get("levels") ?? "1-10";
   const [from, to] = levels.split("-").map(Number);
   const requestKey = `${type}:${from}-${to}`;
   const [result, setResult] = useState<{ key: string; subjects: BrowseSubject[] } | null>(null);

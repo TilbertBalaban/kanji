@@ -44,21 +44,35 @@ function RelatedList({ title, items }: { title: string; items: RelatedSubject[] 
     <section className="rounded-xl bg-white p-6 shadow">
       <h2 className="mb-3 text-lg font-semibold">{title}</h2>
       <div className="flex flex-wrap gap-2">
-        {items.map((r) => (
-          <Link
-            key={r.id}
-            href={`/subjects/${r.id}`}
-            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-white shadow-sm hover:opacity-90"
-            style={{ backgroundColor: TYPE_COLORS[r.type] }}
-          >
-            <SubjectChar
-              characters={r.characters}
-              characterImage={r.characterImage}
-              className="text-xl"
-            />
-            <span className="text-sm">{r.primaryMeaning}</span>
-          </Link>
-        ))}
+        {items.map((r) => {
+          const color = TYPE_COLORS[r.type];
+          // srsStage null or 0 means the subject is still locked (not yet studied).
+          const studied = r.srsStage !== null && r.srsStage > 0;
+          return (
+            <Link
+              key={r.id}
+              href={`/subjects/${r.id}`}
+              title={studied ? "Studied" : "Not studied yet"}
+              className="flex w-24 flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white p-2 text-center shadow-sm hover:shadow-md"
+            >
+              <span
+                className="flex h-12 w-12 items-center justify-center rounded-lg"
+                style={
+                  studied
+                    ? { backgroundColor: color, color: "#fff" }
+                    : { color, border: `2px dashed ${color}` }
+                }
+              >
+                <SubjectChar
+                  characters={r.characters}
+                  characterImage={r.characterImage}
+                  className="text-xl"
+                />
+              </span>
+              <span className="text-xs text-slate-500">{r.primaryMeaning}</span>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );

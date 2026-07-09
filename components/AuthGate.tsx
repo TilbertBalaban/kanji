@@ -27,6 +27,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [passwordInput, setPasswordInput] = useState("");
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Per-user WaniKani API key inputs + sync state on the chooser screen.
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
 
   // The signed httpOnly cookies are the source of truth. Ask the server what
   // state we're in on first load.
@@ -82,6 +86,37 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       setStatus("ready");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runSync(name: User) {
+    const apiKey = (apiKeys[name] ?? "").trim();
+    if (!apiKey || syncing) return;
+    setSyncing(name);
+    setSyncMsg((m) => ({ ...m, [name]: { ok: true, text: "Syncing from WaniKani…" } }));
+    try {
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: name, apiKey }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSyncMsg((m) => ({ ...m, [name]: { ok: false, text: data?.error ?? "Sync failed" } }));
+        return;
+      }
+      setSyncMsg((m) => ({
+        ...m,
+        [name]: {
+          ok: true,
+          text: `Synced ${data.assignmentsSynced} items · ${data.synonymsSynced} synonyms · level ${data.level}`,
+        },
+      }));
+      setApiKeys((k) => ({ ...k, [name]: "" }));
+    } catch {
+      setSyncMsg((m) => ({ ...m, [name]: { ok: false, text: "Network error" } }));
+    } finally {
+      setSyncing(null);
     }
   }
 
@@ -152,17 +187,53 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </div>
           <p className="mt-1 text-sm text-slate-400">Who&apos;s studying?</p>
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          {USER_IDS.map((name) => (
-            <button
-              key={name}
-              onClick={() => chooseUser(name)}
-              disabled={busy}
-              className="w-40 rounded-xl bg-white px-6 py-8 text-xl font-semibold text-slate-900 shadow transition-transform hover:scale-[1.03] hover:bg-cyan-50 disabled:opacity-60"
-            >
-              {name}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-start justify-center gap-6">
+          {USER_IDS.map((name) => {
+            const msg = syncMsg[name];
+            const isSyncing = syncing === name;
+            return (
+              <div key={name} className="flex w-56 flex-col gap-3">
+                <button
+                  onClick={() => chooseUser(name)}
+                  disabled={busy || syncing !== null}
+                  className="w-full rounded-xl bg-white px-6 py-8 text-xl font-semibold text-slate-900 shadow transition-transform hover:scale-[1.03] hover:bg-cyan-50 disabled:opacity-60"
+                >
+                  {name}
+                </button>
+                <div className="rounded-lg bg-slate-800/60 p-3">
+                  <label className="mb-1 block text-xs font-medium text-slate-400">
+                    WaniKani API key
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKeys[name] ?? ""}
+                    onChange={(e) =>
+                      setApiKeys((k) => ({ ...k, [name]: e.target.value }))
+                    }
+                    placeholder="Paste API token"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-sm text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void runSync(name)}
+                    disabled={isSyncing || syncing !== null || !(apiKeys[name] ?? "").trim()}
+                    className="mt-2 w-full rounded bg-cyan-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+                  >
+                    {isSyncing ? "Syncing…" : "Sync"}
+                  </button>
+                  {msg && (
+                    <p
+                      className={`mt-2 text-xs ${msg.ok ? "text-cyan-300" : "text-red-400"}`}
+                    >
+                      {msg.text}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );

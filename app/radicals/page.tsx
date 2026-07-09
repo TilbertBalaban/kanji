@@ -1,20 +1,10 @@
-"use client";
-
-import { use } from "react";
+import { Suspense } from "react";
 import { SubjectTypeBrowser } from "@/components/SubjectTypeBrowser";
 
-export default function RadicalsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ levels?: string }>;
-}) {
-  const { levels } = use(searchParams);
+export default function RadicalsPage() {
   return (
-    <SubjectTypeBrowser
-      type="radical"
-      title="Radicals"
-      basePath="/radicals"
-      levels={levels ?? "1-10"}
-    />
+    <Suspense>
+      <SubjectTypeBrowser type="radical" title="Radicals" basePath="/radicals" />
+    </Suspense>
   );
 }
