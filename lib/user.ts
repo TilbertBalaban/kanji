@@ -1,33 +1,30 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { isUserId, GATE_COOKIE, SESSION_COOKIE, type UserId } from "./users";
-import { unsign, GATE_PAYLOAD } from "./auth";
+import { auth } from "@clerk/nextjs/server";
+import { ensureUserInitialized } from "./progression";
 
-/** True if the shared password has been verified (valid gate cookie present). */
-export async function hasValidGate(): Promise<boolean> {
-  const store = await cookies();
-  return unsign(store.get(GATE_COOKIE)?.value) === GATE_PAYLOAD;
-}
+// User identity comes from Clerk. Database rows are keyed by the Clerk user id
+// (e.g. "user_2ab..."), so no local user table is needed.
 
-/** The current user from the signed session cookie, or null if none/invalid. */
-export async function getCurrentUserId(): Promise<UserId | null> {
-  const store = await cookies();
-  const user = unsign(store.get(SESSION_COOKIE)?.value);
-  return isUserId(user) ? user : null;
+/** The current Clerk user id, or null if not signed in. */
+export async function getCurrentUserId(): Promise<string | null> {
+  const { userId } = await auth();
+  return userId;
 }
 
 /**
- * Resolve the current user for an API route. On success returns { userId };
- * otherwise returns { response } with a 401 the route should return directly.
+ * Resolve the current user for an API route. On success returns { userId }
+ * (with the user's progress rows initialized on first use); otherwise returns
+ * { response } with a 401 the route should return directly.
  */
 export async function requireUserId(): Promise<
-  { userId: UserId; response?: undefined } | { userId?: undefined; response: NextResponse }
+  { userId: string; response?: undefined } | { userId?: undefined; response: NextResponse }
 > {
-  const userId = await getCurrentUserId();
+  const { userId } = await auth();
   if (!userId) {
     return {
-      response: NextResponse.json({ error: "No user selected" }, { status: 401 }),
+      response: NextResponse.json({ error: "Not signed in" }, { status: 401 }),
     };
   }
+  await ensureUserInitialized(userId);
   return { userId };
 }

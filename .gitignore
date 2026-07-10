@@ -48,3 +48,6 @@ prisma/dev.db-journal
 
 # keep the documented example env committed
 !.env.example
+
+# clerk configuration (can include secrets)
+/.clerk/

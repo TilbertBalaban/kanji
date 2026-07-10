@@ -3,7 +3,6 @@ import { prisma } from "./db";
 import { noteForSubject } from "./notes";
 import { toSubjectDTO } from "./serialize";
 import { synonymsBySubject } from "./synonyms";
-import type { UserId } from "./users";
 
 // Maps the URL kind segment to the DB `type` filter used to resolve a subject
 // from its human-readable key (slug for radicals, characters otherwise).
@@ -25,7 +24,7 @@ export async function resolveSubjectId(kind: string, key: string): Promise<numbe
 }
 
 /** The full subject-detail payload (subject, note, assignment, logs, related). */
-export async function buildSubjectDetail(userId: UserId, subjectId: number) {
+export async function buildSubjectDetail(userId: string, subjectId: number) {
   const subject = await prisma.subject.findUnique({
     where: { id: subjectId },
     include: {

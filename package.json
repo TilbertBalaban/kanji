@@ -11,12 +11,14 @@
     "migrate:deploy": "prisma migrate deploy",
     "seed": "tsx --env-file=.env scripts/seed.ts",
     "sync": "tsx --env-file=.env scripts/sync-wanikani.ts",
+    "migrate:user": "tsx --env-file=.env scripts/migrate-user-ids.ts",
     "backfill:audio": "tsx --env-file=.env scripts/backfill-audio.ts",
     "test": "vitest run",
     "fetch:radical-images": "tsx --env-file=.env scripts/fetch-radical-images.ts",
     "fetch:radical-character-images": "tsx --env-file=.env scripts/fetch-radical-character-images.ts"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.5.16",
     "@prisma/client": "^6.19.3",
     "next": "16.2.10",
     "react": "19.2.4",
