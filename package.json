@@ -16,9 +16,11 @@
     "backfill:audio": "tsx --env-file=.env scripts/backfill-audio.ts",
     "test": "vitest run",
     "fetch:radical-images": "tsx --env-file=.env scripts/fetch-radical-images.ts",
+    "mirror:assets": "tsx --env-file=.env scripts/mirror-assets.ts",
     "fetch:radical-character-images": "tsx --env-file=.env scripts/fetch-radical-character-images.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1085.0",
     "@clerk/nextjs": "^7.5.16",
     "@prisma/client": "^6.19.3",
     "next": "16.2.10",

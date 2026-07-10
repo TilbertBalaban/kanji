@@ -12,10 +12,10 @@
 // local subject that later becomes hidden upstream is left as-is (deleting it
 // would break assignments/review logs that reference it).
 //
-// Assets already mirrored into public/ (characterImage → /radical-images/…,
-// audioUrls → /audio/…) are preserved on update — the API would repoint them
-// at files.wanikani.com. New subjects arrive with WaniKani URLs; run
-// `npm run mirror:assets` afterwards to localize them.
+// Assets already mirrored to R2 (any non-wanikani characterImage/audioUrls)
+// are preserved on update — the API would repoint them at files.wanikani.com.
+// New subjects arrive with WaniKani URLs; run `npm run mirror:assets`
+// afterwards to mirror them.
 
 import { prisma } from "./db";
 import { mapAudioUrls, type WKPronunciationAudio } from "./audio";
@@ -177,10 +177,10 @@ export async function syncContentFromWaniKani(
       const mapped = mapSubject(s);
       const current = existingById.get(s.id);
       const update = { ...mapped };
-      if (current?.characterImage?.startsWith("/")) {
+      if (current?.characterImage && !current.characterImage.includes("wanikani")) {
         update.characterImage = current.characterImage;
       }
-      if (current?.audioUrls?.includes('"/audio/')) {
+      if (current?.audioUrls && !current.audioUrls.includes("wanikani")) {
         update.audioUrls = current.audioUrls;
       }
       await prisma.subject.upsert({

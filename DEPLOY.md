@@ -63,22 +63,38 @@ untouched.
 - Note: on the Vercel Hobby plan, cron runs can fire at any minute within the
   scheduled hour.
 
-## Local asset mirror (images + audio)
+## Asset mirror on Cloudflare R2 (images + audio)
 
 Radical character images and vocabulary pronunciation audio are mirrored into
-`public/radical-images/` and `public/audio/` (committed to the repo, so Vercel
-serves them) and the `Subject` rows point at the local paths — the app does
-not depend on `files.wanikani.com` at runtime. The content sync preserves
-these local paths on update; brand-new subjects arrive with WaniKani URLs, so
-after a sync introduces new subjects run:
+a Cloudflare R2 bucket and the `Subject` rows point at its public URLs — the
+app does not depend on `files.wanikani.com` at runtime, and the repo stays
+free of binary assets. The content sync preserves these URLs on update;
+brand-new subjects arrive with WaniKani URLs, so after a sync introduces new
+subjects run (from your machine — nothing R2-related is needed on Vercel):
 
 ```bash
-npm run mirror:assets   # downloads any WaniKani-hosted assets, repoints the DB
+npm run mirror:assets   # uploads any WaniKani-hosted assets to R2, repoints the DB
 ```
 
-It is idempotent (already-mirrored rows and existing files are skipped) and
-retries are safe. The mirrored files are for personal study use only — keep
-the repo private and do not redistribute them.
+It is idempotent (already-uploaded objects and already-repointed rows are
+skipped) and retries are safe.
+
+One-time bucket setup (Cloudflare dashboard → R2):
+
+1. Create the bucket (`wanikani-assets`) and enable public access on it
+   (Settings → Public access → r2.dev subdomain, or attach a custom domain).
+2. Create an API token with Object Read & Write on the bucket.
+3. Fill in the `R2_*` variables in `.env` (see `.env.example`).
+4. Add a CORS rule on the bucket allowing `GET` from your app origins —
+   required because the radical SVGs are used as CSS `mask` images, which
+   browsers fetch in CORS mode:
+
+```json
+[{ "AllowedOrigins": ["*"], "AllowedMethods": ["GET"], "MaxAgeSeconds": 86400 }]
+```
+
+The mirrored files are for personal study use only — keep the bucket URL
+private and do not redistribute them.
 
 ## Users
 

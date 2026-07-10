@@ -40,7 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env
+
+# retired local asset mirror (assets live in Cloudflare R2 now)
 /public/radical-images/
+/public/audio/
 
 # legacy local SQLite db (app uses Postgres now)
 prisma/dev.db
