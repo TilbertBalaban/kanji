@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { answerCounts } from "@/lib/accuracy";
 import { prisma } from "@/lib/db";
 import { requireUserId } from "@/lib/user";
 
@@ -20,20 +21,14 @@ export async function GET() {
   const byType: Record<string, { total: number; correct: number }> = {};
 
   for (const log of logs) {
-    // Each review has a meaning answer, a reading answer unless radical, and a
-    // recall answer (English → reading, KaniWani-style) for vocabulary.
-    const isVocab =
-      log.subject.type === "vocabulary" || log.subject.type === "kana_vocabulary";
-    const answers = 1 + (log.subject.type !== "radical" ? 1 : 0) + (isVocab ? 1 : 0);
-    const wrong =
-      log.meaningIncorrectCount + log.readingIncorrectCount + log.recallIncorrectCount;
-    totalAnswers += answers + wrong;
-    correctAnswers += answers;
+    const { correct, total } = answerCounts(log);
+    totalAnswers += total;
+    correctAnswers += correct;
 
     const t = log.subject.type;
     byType[t] ??= { total: 0, correct: 0 };
-    byType[t].total += answers + wrong;
-    byType[t].correct += answers;
+    byType[t].total += total;
+    byType[t].correct += correct;
   }
 
   const totalReviews = await prisma.reviewLog.count({ where: { userId } });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { reviewAccuracy } from "@/lib/accuracy";
 import { prisma } from "@/lib/db";
 import { DAILY_LESSON_LIMIT, getCurrentLevel, lessonsDoneToday } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
@@ -94,6 +95,25 @@ export async function GET() {
     });
   }
 
+  // Correct Reviews: per-answer accuracy over the past 7 days and the 7 days
+  // before that, for the dashboard Learning Zone gauge.
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 3600_000);
+  const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 3600_000);
+  const accuracyLogs = await prisma.reviewLog.findMany({
+    where: { userId, createdAt: { gte: twoWeeksAgo } },
+    select: {
+      createdAt: true,
+      meaningIncorrectCount: true,
+      readingIncorrectCount: true,
+      recallIncorrectCount: true,
+      subject: { select: { type: true } },
+    },
+  });
+  const correctReviews = {
+    pastWeek: reviewAccuracy(accuracyLogs.filter((l) => l.createdAt >= weekAgo)),
+    previousWeek: reviewAccuracy(accuracyLogs.filter((l) => l.createdAt < weekAgo)),
+  };
+
   // Review forecast: next 24h in hourly buckets
   const in24h = new Date(now.getTime() + 24 * 3600_000);
   const upcoming = await prisma.assignment.findMany({
@@ -140,5 +160,6 @@ export async function GET() {
     forecast,
     spread,
     recentMistakes,
+    correctReviews,
   });
 }

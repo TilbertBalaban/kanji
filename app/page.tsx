@@ -32,6 +32,12 @@ interface Summary {
   forecast: Record<string, number>;
   spread: StageBucket[];
   recentMistakes: Mistake[];
+  correctReviews: CorrectReviewsData;
+}
+
+interface CorrectReviewsData {
+  pastWeek: number | null;
+  previousWeek: number | null;
 }
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
@@ -80,7 +86,12 @@ export default function Dashboard() {
         <ActiveItemSpread spread={summary.spread} />
       </div>
 
-      <RecentMistakes mistakes={summary.recentMistakes} />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <CorrectReviews data={summary.correctReviews} />
+        <div className="lg:col-span-2">
+          <RecentMistakes mistakes={summary.recentMistakes} />
+        </div>
+      </div>
 
       <section className="rounded-xl bg-white p-6 shadow">
         <h2 className="mb-4 text-lg font-semibold">Review forecast (next 24h)</h2>
@@ -104,6 +115,106 @@ export default function Dashboard() {
         )}
       </section>
     </div>
+  );
+}
+
+// ---------- Correct Reviews (Learning Zone) ----------
+
+// Getting 85-95% of answers right is "The Learning Zone": hard enough to
+// stretch memory, easy enough to keep up. Purely informational, like on
+// WaniKani — it never gates lessons.
+const ZONE_MIN = 0.85;
+const ZONE_MAX = 0.95;
+const GAUGE_TICKS = 25;
+
+function lerpColor(a: string, b: string, t: number): string {
+  const ah = parseInt(a.slice(1), 16);
+  const bh = parseInt(b.slice(1), 16);
+  const hex = [16, 8, 0]
+    .map((s) => {
+      const av = (ah >> s) & 0xff;
+      const bv = (bh >> s) & 0xff;
+      return Math.round(av + (bv - av) * t)
+        .toString(16)
+        .padStart(2, "0");
+    })
+    .join("");
+  return `#${hex}`;
+}
+
+// Radical blue → vocabulary purple → kanji pink across the arc.
+function tickColor(t: number): string {
+  return t < 0.5
+    ? lerpColor(TYPE_COLORS.radical, TYPE_COLORS.vocabulary, t * 2)
+    : lerpColor(TYPE_COLORS.vocabulary, TYPE_COLORS.kanji, (t - 0.5) * 2);
+}
+
+function CorrectReviews({ data }: { data: CorrectReviewsData }) {
+  const pct = data.pastWeek;
+  const zone =
+    pct === null ? null : pct < ZONE_MIN ? "below" : pct <= ZONE_MAX ? "inside" : "above";
+
+  return (
+    <section className="flex h-full flex-col rounded-xl bg-white p-6 shadow">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2">
+        <svg viewBox="0 0 200 104" className="w-44" aria-hidden>
+          {Array.from({ length: GAUGE_TICKS }, (_, i) => {
+            const t = i / (GAUGE_TICKS - 1);
+            const angle = Math.PI * (1 - t);
+            const x = Math.cos(angle);
+            const y = Math.sin(angle);
+            const filled = pct !== null && (i + 0.5) / GAUGE_TICKS <= pct;
+            return (
+              <line
+                key={i}
+                x1={100 + 72 * x}
+                y1={100 - 72 * y}
+                x2={100 + 96 * x}
+                y2={100 - 96 * y}
+                stroke={filled ? tickColor(t) : "#e2e8f0"}
+                strokeWidth={8}
+              />
+            );
+          })}
+        </svg>
+
+        <div className="rounded-full bg-slate-100 px-3 py-1 text-center text-xs text-slate-600">
+          {zone === null && "No reviews yet this week"}
+          {zone === "below" && (
+            <>
+              You&apos;re below <span className="font-bold">The Learning Zone</span> — maybe
+              ease up on lessons
+            </>
+          )}
+          {zone === "inside" && (
+            <>
+              You&apos;re inside <span className="font-bold">The Learning Zone</span>!
+            </>
+          )}
+          {zone === "above" && (
+            <>
+              You&apos;re above <span className="font-bold">The Learning Zone</span> — room
+              for more lessons
+            </>
+          )}
+        </div>
+
+        <div className="mt-2 text-center">
+          <h2 className="text-lg font-semibold text-slate-500">Correct Reviews</h2>
+          <div className="text-4xl font-bold text-slate-800">
+            {pct === null ? "—" : `${(pct * 100).toFixed(2)}%`}
+          </div>
+          <div className="text-sm text-slate-500">Past 7 Days</div>
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-slate-100 pt-3 text-center text-sm text-slate-600">
+        Previous Period:{" "}
+        <span className="font-bold text-slate-800">
+          {data.previousWeek === null ? "—" : `${(data.previousWeek * 100).toFixed(2)}%`}
+        </span>
+      </div>
+    </section>
   );
 }
 
