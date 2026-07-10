@@ -7,6 +7,7 @@
 //        npm run sync:content -- 90        (last 90 days)
 
 import { prisma } from "../lib/db";
+import { mirrorAssetsToR2 } from "../lib/asset-mirror";
 import { syncContentFromWaniKani } from "../lib/content-sync";
 
 const API_KEY = process.env.WANIKANI_API_KEY;
@@ -37,6 +38,13 @@ async function main() {
   console.log(
     `Done: ${result.upserted} subjects updated (${result.skippedHidden} hidden skipped).`,
   );
+
+  // Mirror any WaniKani-hosted assets the sync introduced, same as the cron.
+  const assets = await mirrorAssetsToR2(console.log);
+  if (assets.failed.length) {
+    console.log("Re-run `npm run mirror:assets` to retry the failed subjects.");
+    process.exitCode = 1;
+  }
 }
 
 main()

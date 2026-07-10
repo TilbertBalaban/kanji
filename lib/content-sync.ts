@@ -88,15 +88,17 @@ export async function fetchSubjectPage(
 
 export function mapSubject(s: WKSubject) {
   const d = s.data;
-  const pngImage = d.character_images?.find(
-    (i) => i.content_type === "image/png",
+  // Prefer the SVG variant: the PNG variants are CDN-signed and expire (403),
+  // and the asset mirror re-uploads whatever URL is stored here.
+  const svgImage = d.character_images?.find(
+    (i) => i.content_type === "image/svg+xml",
   );
   return {
     id: s.id,
     type: s.object,
     level: d.level,
     characters: d.characters,
-    characterImage: pngImage?.url ?? d.character_images?.[0]?.url ?? null,
+    characterImage: svgImage?.url ?? d.character_images?.[0]?.url ?? null,
     slug: d.slug,
     documentUrl: d.document_url,
     meanings: JSON.stringify(

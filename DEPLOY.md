@@ -16,6 +16,7 @@ whatever methods you enable in the Clerk dashboard).
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | local + Vercel | `/sign-up` |
 | `WANIKANI_API_KEY` | local + Vercel | seeds subject content; on Vercel, used by the weekly content-update cron |
 | `CRON_SECRET` | Vercel | random string protecting `/api/cron/sync-content`; Vercel Cron sends it automatically |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL` | local + Vercel | Cloudflare R2 bucket holding the mirrored assets (see "Asset mirror" below) |
 
 See `.env.example`.
 
@@ -43,7 +44,8 @@ npm run seed             # loads ~9,367 WaniKani subjects (per-user unlocks happ
 3. Add the env vars from the table above (Production **and** Preview):
    `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
    `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL`,
-   `NEXT_PUBLIC_CLERK_SIGN_UP_URL`, `WANIKANI_API_KEY`, `CRON_SECRET`.
+   `NEXT_PUBLIC_CLERK_SIGN_UP_URL`, `WANIKANI_API_KEY`, `CRON_SECRET`,
+   and the five `R2_*` vars.
 4. Deploy. The build runs `prisma generate && next build`.
 5. Open the URL → sign up (or sign in) with your own account.
 
@@ -53,10 +55,12 @@ WaniKani ships content updates roughly weekly (updated mnemonics, readings,
 new context sentences, …). `vercel.json` schedules a Vercel Cron job every
 Friday 09:00 UTC that hits `/api/cron/sync-content`, which upserts every
 subject WaniKani changed in the last 30 days (the overlap makes runs
-idempotent and covers missed weeks). User progress, notes, and synonyms are
-untouched.
+idempotent and covers missed weeks), then mirrors any WaniKani-hosted assets
+the sync introduced into R2 (see "Asset mirror" below). User progress, notes,
+and synonyms are untouched.
 
-- Requires `WANIKANI_API_KEY` and `CRON_SECRET` in the Vercel project env.
+- Requires `WANIKANI_API_KEY`, `CRON_SECRET`, and the `R2_*` vars in the
+  Vercel project env.
 - Run it manually from your machine with `npm run sync:content` (optionally
   `npm run sync:content -- 90` for a 90-day lookback), or
   `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/sync-content`.
@@ -67,24 +71,28 @@ untouched.
 
 Radical character images and vocabulary pronunciation audio are mirrored into
 a Cloudflare R2 bucket and the `Subject` rows point at its public URLs — the
-app does not depend on `files.wanikani.com` at runtime, and the repo stays
-free of binary assets. The content sync preserves these URLs on update;
-brand-new subjects arrive with WaniKani URLs, so after a sync introduces new
-subjects run (from your machine — nothing R2-related is needed on Vercel):
+app never depends on `files.wanikani.com` at runtime (a WaniKani outage can
+only block syncing), and the repo stays free of binary assets.
+
+Mirroring is automatic: the weekly cron and `npm run sync:content` both mirror
+any WaniKani-hosted assets right after each sync, and the content sync
+preserves already-mirrored URLs on update. If a run reports failed subjects
+(they keep their WaniKani URL and are retried on the next sync), you can also
+retry immediately:
 
 ```bash
 npm run mirror:assets   # uploads any WaniKani-hosted assets to R2, repoints the DB
 ```
 
-It is idempotent (already-uploaded objects and already-repointed rows are
-skipped) and retries are safe.
+It is idempotent and retries are safe.
 
 One-time bucket setup (Cloudflare dashboard → R2):
 
 1. Create the bucket (`wanikani-assets`) and enable public access on it
    (Settings → Public access → r2.dev subdomain, or attach a custom domain).
 2. Create an API token with Object Read & Write on the bucket.
-3. Fill in the `R2_*` variables in `.env` (see `.env.example`).
+3. Fill in the `R2_*` variables in `.env` and the Vercel project env
+   (see `.env.example`).
 4. Add a CORS rule on the bucket allowing `GET` from your app origins —
    required because the radical SVGs are used as CSS `mask` images, which
    browsers fetch in CORS mode:
