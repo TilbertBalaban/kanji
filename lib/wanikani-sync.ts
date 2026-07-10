@@ -1,6 +1,7 @@
-// Shared logic to pull SRS progress AND User Synonyms FROM a real WaniKani
-// account INTO a local user, rewriting that user's state. One-directional:
-// WaniKani -> this app. Content must already be seeded (see scripts/seed.ts).
+// Shared logic to pull SRS progress, User Synonyms AND Recent Mistakes FROM a
+// real WaniKani account INTO a local user, rewriting that user's state.
+// One-directional: WaniKani -> this app. Content must already be seeded (see
+// scripts/seed.ts).
 //
 // Used by both the CLI script (scripts/sync-wanikani.ts) and the /api/sync
 // route (triggered from the user chooser). Must stay free of next/headers so
@@ -44,6 +45,21 @@ interface WKStudyMaterial {
   };
 }
 
+interface WKReviewStatistic {
+  id: number;
+  data_updated_at: string;
+  data: {
+    subject_id: number;
+    meaning_correct: number;
+    meaning_incorrect: number;
+    meaning_current_streak: number;
+    reading_correct: number;
+    reading_incorrect: number;
+    reading_current_streak: number;
+    hidden: boolean;
+  };
+}
+
 interface WKUser {
   data: { username: string; level: number };
 }
@@ -53,6 +69,7 @@ export interface SyncResult {
   level: number;
   assignmentsSynced: number;
   synonymsSynced: number;
+  recentMistakesSynced: number;
   skippedHidden: number;
   skippedUnknown: number;
 }
@@ -85,8 +102,11 @@ function toDate(s: string | null): Date | null {
 
 /**
  * Fully rewrite `userId`'s assignments and synonyms from the WaniKani account
- * that owns `apiKey`. Existing local assignments/synonyms for the user are
- * replaced. `log` receives human-readable progress lines (defaults to no-op).
+ * that owns `apiKey`, and import mistakes from the account's last 24h of
+ * reviews as ReviewLog rows so "Recent Mistakes" matches the WaniKani
+ * dashboard. Existing local assignments/synonyms for the user are replaced;
+ * review logs are only added to. `log` receives human-readable progress lines
+ * (defaults to no-op).
  */
 export async function syncFromWaniKani(
   apiKey: string,
@@ -170,7 +190,59 @@ export async function syncFromWaniKani(
     url = collection.pages.next_url;
   }
 
-  // 3. Rewrite the user's state: clear then insert fresh, so items no longer on
+  // 3. Recent mistakes. WaniKani's dashboard shows subjects answered
+  // incorrectly in the past 24h, but the API no longer exposes review records
+  // (GET /reviews is deprecated and returns an empty collection), so they are
+  // inferred from review_statistics instead: a wrong answer resets that
+  // dimension's current streak and the review's eventual correct answer sets
+  // it to 1, so a statistic updated in the last 24h with
+  // `current_streak === 1 && incorrect > 0` means the subject's most recent
+  // review contained a mistake. (Known edge: a lone correct review in the
+  // window recovering from an older miss looks identical.) Each hit becomes a
+  // ReviewLog row so the dashboard and Extra Study flows pick it up, keyed on
+  // the statistic's update time (= last review time) to stay idempotent
+  // across re-syncs and to age out of the 24h window naturally.
+  const dayAgo = new Date(Date.now() - 24 * 3600_000);
+  const stageBySubject = new Map(assignmentRows.map((r) => [r.subjectId, r.srsStage]));
+  const mistakeRows: {
+    userId: string;
+    subjectId: number;
+    createdAt: Date;
+    startingStage: number;
+    endingStage: number;
+    meaningIncorrectCount: number;
+    readingIncorrectCount: number;
+  }[] = [];
+  url = `https://api.wanikani.com/v2/review_statistics?updated_after=${dayAgo.toISOString()}`;
+  page = 0;
+  while (url) {
+    page++;
+    const collection: WKCollection<WKReviewStatistic> = await wkFetch(apiKey, url);
+    for (const s of collection.data) {
+      const d = s.data;
+      if (d.hidden || !knownSubjectIds.has(d.subject_id)) continue;
+      const meaningMissed = d.meaning_current_streak === 1 && d.meaning_incorrect > 0;
+      const readingMissed = d.reading_current_streak === 1 && d.reading_incorrect > 0;
+      if (!meaningMissed && !readingMissed) continue;
+      const endingStage = stageBySubject.get(d.subject_id);
+      if (endingStage === undefined) continue;
+      mistakeRows.push({
+        userId,
+        subjectId: d.subject_id,
+        createdAt: new Date(s.data_updated_at),
+        // The API doesn't expose the pre-review stage; assume the minimum
+        // one-stage drop a missed review causes.
+        startingStage: endingStage + 1,
+        endingStage,
+        meaningIncorrectCount: meaningMissed ? 1 : 0,
+        readingIncorrectCount: readingMissed ? 1 : 0,
+      });
+    }
+    log(`review_statistics page ${page}: ${mistakeRows.length} recent mistakes detected`);
+    url = collection.pages.next_url;
+  }
+
+  // 4. Rewrite the user's state: clear then insert fresh, so items no longer on
   // the WaniKani account don't linger locally. Then mirror the account level.
   await prisma.assignment.deleteMany({ where: { userId } });
   if (assignmentRows.length > 0) {
@@ -182,6 +254,23 @@ export async function syncFromWaniKani(
     await prisma.userSynonym.createMany({ data: synonymRows, skipDuplicates: true });
   }
 
+  // Review logs are app history, not mirrored WaniKani state, so they are
+  // never cleared — only add mistake rows not already recorded (by a previous
+  // sync of the same review; in-app reviews have their own timestamps).
+  const existingLogs = await prisma.reviewLog.findMany({
+    where: { userId, createdAt: { gte: dayAgo } },
+    select: { subjectId: true, createdAt: true },
+  });
+  const existingKeys = new Set(
+    existingLogs.map((l) => `${l.subjectId}:${l.createdAt.getTime()}`),
+  );
+  const newMistakes = mistakeRows.filter(
+    (m) => !existingKeys.has(`${m.subjectId}:${m.createdAt.getTime()}`),
+  );
+  if (newMistakes.length > 0) {
+    await prisma.reviewLog.createMany({ data: newMistakes });
+  }
+
   await prisma.userProgress.upsert({
     where: { userId },
     create: { userId, currentLevel: user.data.level },
@@ -189,7 +278,8 @@ export async function syncFromWaniKani(
   });
 
   log(
-    `Done: ${assignmentRows.length} assignments, ${synonymRows.length} synonyms ` +
+    `Done: ${assignmentRows.length} assignments, ${synonymRows.length} synonyms, ` +
+      `${mistakeRows.length} recent mistakes (${newMistakes.length} new) ` +
       `for ${userId} (${skippedHidden} hidden, ${skippedUnknown} unknown-subject skipped), ` +
       `level set to ${user.data.level}.`,
   );
@@ -199,6 +289,7 @@ export async function syncFromWaniKani(
     level: user.data.level,
     assignmentsSynced: assignmentRows.length,
     synonymsSynced: synonymRows.length,
+    recentMistakesSynced: mistakeRows.length,
     skippedHidden,
     skippedUnknown,
   };
