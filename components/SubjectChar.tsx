@@ -7,6 +7,11 @@
 // an `invert` filter, we paint the glyph with the surrounding text color via a
 // CSS mask, so it matches the adjacent text everywhere (white on colored tiles,
 // the type color on light backgrounds).
+//
+// Radical SVGs aren't square, so we can't hardcode a 1em×1em box or the glyph
+// gets shrunk to fit. A CSS mask doesn't size its element, so we nest a hidden
+// <img> at `height: 1em; width: auto` to let the browser derive the box's width
+// from the SVG's aspect ratio; the span shrink-wraps to it and carries the mask.
 
 export function SubjectChar({
   characters,
@@ -27,12 +32,13 @@ export function SubjectChar({
         className={`inline-block ${className}`}
         style={{
           height: "1em",
-          width: "1em",
           backgroundColor: "currentColor",
           WebkitMask: mask,
           mask,
         }}
-      />
+      >
+        <img src={characterImage} alt="" style={{ height: "1em", width: "auto", visibility: "hidden" }} />
+      </span>
     );
   }
   return <span className={className}>?</span>;

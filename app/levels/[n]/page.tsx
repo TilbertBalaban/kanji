@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
+import { subjectPath } from "@/lib/subject-url";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS } from "@/lib/ui";
 
 interface LevelSubject {
@@ -10,6 +11,7 @@ interface LevelSubject {
   type: string;
   characters: string | null;
   characterImage: string | null;
+  slug: string;
   primaryMeaning: string;
   primaryReading: string | null;
   srsStage: number | null;
@@ -67,7 +69,7 @@ export default function LevelPage({ params }: { params: Promise<{ n: string }> }
               {items.map((s) => (
                 <Link
                   key={s.id}
-                  href={`/subjects/${s.id}`}
+                  href={subjectPath(s)}
                   className="group relative flex flex-col items-center rounded-lg px-3 py-2 text-white shadow-sm transition-transform hover:scale-105"
                   style={{
                     backgroundColor: s.started

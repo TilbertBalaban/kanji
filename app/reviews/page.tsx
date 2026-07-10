@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as wanakana from "wanakana";
+import { AudioButton } from "@/components/AudioButton";
 import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
 import { checkMeaning, checkReading, STAGE_NAMES } from "@/lib/srs";
 import type { SubjectDTO } from "@/lib/serialize";
+import { subjectPath } from "@/lib/subject-url";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
 
 type ReviewSubject = SubjectDTO & { srsStage: number };
@@ -62,8 +64,16 @@ export default function ReviewsPage() {
   const [sessionWrong, setSessionWrong] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // "Extra Study" over recent mistakes: same quiz UI, sourced from the mistake
+  // items and — crucially — with no SRS progression on completion.
+  const [mistakesMode] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("source") === "mistakes",
+  );
+
   useEffect(() => {
-    fetch("/api/reviews")
+    fetch(mistakesMode ? "/api/recent-mistakes" : "/api/reviews")
       .then((r) => r.json())
       .then((data: { subjects: ReviewSubject[] }) => {
         const loaded: Item[] = data.subjects.map((subject) => ({
@@ -80,7 +90,7 @@ export default function ReviewsPage() {
         setItems(loaded);
         setTask(pickTask(loaded));
       });
-  }, []);
+  }, [mistakesMode]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -158,7 +168,8 @@ export default function ReviewsPage() {
         (!done.needsRecall || done.recallDone)
       ) {
         setCompleted((c) => c + 1);
-        void submitCompleted(done);
+        // Extra Study is practice only — never advance the SRS stage.
+        if (!mistakesMode) void submitCompleted(done);
       }
     } else {
       const updated = [...items];
@@ -167,14 +178,16 @@ export default function ReviewsPage() {
       setSessionWrong((w) => w + 1);
       setFeedback("incorrect");
     }
-  }, [items, task, input, feedback, advance, submitCompleted]);
+  }, [items, task, input, feedback, advance, submitCompleted, mistakesMode]);
 
   if (!items) return <p className="text-slate-500">Loading reviews…</p>;
 
   if (items.length === 0) {
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
-        <p className="text-2xl">🎉 No reviews due right now.</p>
+        <p className="text-2xl">
+          {mistakesMode ? "🎉 No recent mistakes to study." : "🎉 No reviews due right now."}
+        </p>
         <Link href="/" className="mt-4 inline-block text-sky-600 hover:underline">
           Back to dashboard
         </Link>
@@ -187,10 +200,16 @@ export default function ReviewsPage() {
       completed > 0 ? Math.round((completed / (completed + sessionWrong)) * 100) : 100;
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
-        <h1 className="text-2xl font-bold">Session complete!</h1>
+        <h1 className="text-2xl font-bold">
+          {mistakesMode ? "Extra study complete!" : "Session complete!"}
+        </h1>
         <p className="mt-2 text-slate-600">
-          {completed} items reviewed · {accuracy}% first-guess accuracy
+          {completed} items {mistakesMode ? "studied" : "reviewed"} · {accuracy}% first-guess
+          accuracy
         </p>
+        {mistakesMode && (
+          <p className="mt-1 text-sm text-slate-500">Extra practice only — your SRS was untouched.</p>
+        )}
         <Link
           href="/"
           className="mt-6 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
@@ -225,6 +244,11 @@ export default function ReviewsPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
+      {mistakesMode && (
+        <div className="mb-4 rounded-lg bg-slate-100 px-4 py-2 text-center text-sm text-slate-600">
+          🐢 Extra Study · recent mistakes — answers here don&apos;t affect your SRS.
+        </div>
+      )}
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
         <span>
           {completed} / {items.length} done
@@ -258,10 +282,20 @@ export default function ReviewsPage() {
             />
           )}
         </div>
-        <div className="bg-slate-800 py-2 text-center text-sm text-white">
+        <div
+          className={`py-2 text-center text-sm ${
+            task.kind === "meaning"
+              ? "bg-gradient-to-b from-slate-100 to-slate-300 text-slate-700"
+              : "bg-gradient-to-b from-slate-700 to-slate-900 text-white"
+          }`}
+        >
           {TYPE_LABELS[subject.type]}{" "}
           <span className="font-bold">{task.kind === "meaning" ? "Meaning" : "Reading"}</span>
-          {isRecall && <span className="text-slate-400"> · from English</span>}
+          {isRecall && (
+            <span className={task.kind === "meaning" ? "text-slate-500" : "text-slate-400"}>
+              {" "}· from English
+            </span>
+          )}
         </div>
         <div className={`border-t-4 transition-colors ${feedbackClasses}`}>
           <input
@@ -283,6 +317,18 @@ export default function ReviewsPage() {
         </div>
       </div>
 
+      {(feedback === "correct" || feedback === "incorrect") &&
+        VOCAB_TYPES.has(subject.type) &&
+        subject.audioUrls.length > 0 && (
+          <div className="mt-4 flex justify-center">
+            <AudioButton
+              key={`${subject.id}-${task.kind}-${feedback}`}
+              audioUrls={subject.audioUrls}
+              autoPlay={wantsKana}
+            />
+          </div>
+        )}
+
       {feedback === "retry" && (
         <p className="mt-3 text-center text-sm text-amber-600">
           That reading exists, but it&apos;s not the one we&apos;re looking for — try another.
@@ -297,7 +343,7 @@ export default function ReviewsPage() {
               : `Meaning: ${subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}`}
           </p>
           <Link
-            href={`/subjects/${subject.id}`}
+            href={subjectPath(subject)}
             target="_blank"
             className="mt-1 inline-block text-sky-600 hover:underline"
           >

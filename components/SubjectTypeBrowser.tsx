@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type CSSProperties } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
 import { LEVEL_RANGES } from "@/components/TypeNavDropdown";
+import { subjectPath } from "@/lib/subject-url";
 import { TYPE_COLORS } from "@/lib/ui";
 
 interface BrowseSubject {
@@ -13,6 +14,7 @@ interface BrowseSubject {
   level: number;
   characters: string | null;
   characterImage: string | null;
+  slug: string;
   primaryMeaning: string;
   primaryReading: string | null;
   status: "locked" | "lesson" | "review" | "burned";
@@ -134,18 +136,32 @@ export function SubjectTypeBrowser({
               {items.map((s) => (
                 <Link
                   key={s.id}
-                  href={`/subjects/${s.id}`}
-                  className={`flex flex-col items-center rounded-lg px-3 py-2 shadow-sm transition-transform hover:scale-105 ${
-                    s.status === "locked" || s.status === "lesson" ? "[&_img]:invert-0" : ""
+                  href={subjectPath(s)}
+                  className={`flex flex-col items-center rounded-lg border border-slate-200 bg-white px-2 pb-2 pt-2 text-center shadow-sm transition-transform hover:scale-105 ${
+                    type === "vocabulary" ? "min-w-24 max-w-40" : "w-24"
                   }`}
-                  style={tileStyle(s.status, color)}
-                  title={`${s.primaryMeaning}${s.primaryReading ? ` · ${s.primaryReading}` : ""} — ${STATUS_LABELS[s.status]}`}
+                  title={STATUS_LABELS[s.status]}
                 >
-                  <SubjectChar
-                    characters={s.characters}
-                    characterImage={s.characterImage}
-                    className="text-2xl"
-                  />
+                  <span
+                    className={`flex h-14 items-center justify-center rounded-md ${
+                      type === "vocabulary"
+                        ? "min-w-14 max-w-full whitespace-nowrap px-3"
+                        : "w-14"
+                    }`}
+                    style={tileStyle(s.status, color)}
+                  >
+                    <SubjectChar
+                      characters={s.characters}
+                      characterImage={s.characterImage}
+                      className={type === "vocabulary" ? "text-2xl" : "text-3xl"}
+                    />
+                  </span>
+                  <span className="mt-2 text-sm text-slate-500">
+                    {s.primaryReading ?? " "}
+                  </span>
+                  <span className="text-sm leading-tight text-slate-700">
+                    {s.primaryMeaning}
+                  </span>
                 </Link>
               ))}
             </div>

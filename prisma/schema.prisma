@@ -23,6 +23,7 @@ model Subject {
   readings       String // [{ reading, primary, acceptedAnswer, type? }]
   componentIds   String // [subjectId] — radicals for kanji, kanji for vocab
   amalgamationIds String // [subjectId] — reverse links ("found in")
+  visuallySimilarIds String @default("[]") // [subjectId] — kanji that look alike
   meaningMnemonic String
   meaningHint    String?
   readingMnemonic String?
@@ -35,8 +36,24 @@ model Subject {
   assignments  Assignment[]
   reviewLogs   ReviewLog[]
   userSynonyms UserSynonym[]
+  userNotes    UserNote[]
 
   @@index([level, type])
+}
+
+// Per-user free-form notes for a subject (WaniKani "Meaning Note" / "Reading
+// Note"). One row per (user, subject); both fields are optional.
+model UserNote {
+  id           Int      @id @default(autoincrement())
+  userId       String // "Tilbert" | "Kate" — see lib/users.ts
+  subjectId    Int
+  subject      Subject  @relation(fields: [subjectId], references: [id])
+  meaningNote  String? // notes attached to the Meaning section
+  readingNote  String? // notes attached to the Reading section
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@unique([userId, subjectId])
+  @@index([userId, subjectId])
 }
 
 // Per-user extra accepted meanings for a subject (WaniKani "User Synonyms").

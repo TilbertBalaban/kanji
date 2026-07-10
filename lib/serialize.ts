@@ -1,4 +1,5 @@
 import type { Subject } from "@prisma/client";
+import type { PronunciationAudio } from "./audio";
 import type { AuxMeaning, Meaning, Reading } from "./srs";
 
 export interface SubjectDTO {
@@ -14,13 +15,14 @@ export interface SubjectDTO {
   readings: Reading[];
   componentIds: number[];
   amalgamationIds: number[];
+  visuallySimilarIds: number[];
   meaningMnemonic: string;
   meaningHint: string | null;
   readingMnemonic: string | null;
   readingHint: string | null;
   contextSentences: { en: string; ja: string }[];
   partsOfSpeech: string[];
-  audioUrls: { url: string; contentType: string }[];
+  audioUrls: PronunciationAudio[];
   userSynonyms: string[]; // per-user extra accepted meanings
 }
 
@@ -38,6 +40,7 @@ export function toSubjectDTO(s: Subject, userSynonyms: string[] = []): SubjectDT
     readings: JSON.parse(s.readings),
     componentIds: JSON.parse(s.componentIds),
     amalgamationIds: JSON.parse(s.amalgamationIds),
+    visuallySimilarIds: s.visuallySimilarIds ? JSON.parse(s.visuallySimilarIds) : [],
     meaningMnemonic: s.meaningMnemonic,
     meaningHint: s.meaningHint,
     readingMnemonic: s.readingMnemonic,

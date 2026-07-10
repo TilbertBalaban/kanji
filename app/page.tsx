@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
 import { GURU_STAGE, STAGE_NAMES } from "@/lib/srs";
+import { subjectPath } from "@/lib/subject-url";
 import { STAGE_GROUP_COLORS, TYPE_COLORS } from "@/lib/ui";
 
 interface StageBucket {
@@ -18,6 +19,7 @@ interface Mistake {
   type: string;
   characters: string | null;
   characterImage: string | null;
+  slug: string;
 }
 
 interface Summary {
@@ -336,6 +338,7 @@ function ActiveItemSpread({ spread }: { spread: StageBucket[] }) {
 // ---------- Recent Mistakes ----------
 
 function RecentMistakes({ mistakes }: { mistakes: Mistake[] }) {
+  const none = mistakes.length === 0;
   return (
     <section className="overflow-hidden rounded-xl bg-white shadow">
       <div className="p-6">
@@ -347,24 +350,46 @@ function RecentMistakes({ mistakes }: { mistakes: Mistake[] }) {
         </p>
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <Link
-            href="/reviews"
-            className="flex flex-1 items-center justify-between rounded-lg border border-slate-200 px-4 py-3 shadow-sm transition-colors hover:bg-slate-50"
-          >
-            <span className="font-semibold text-slate-700">Extra Study</span>
-            <span className="flex items-center gap-2 text-slate-500">
-              <span className="rounded-full border border-slate-300 px-2.5 py-0.5 text-sm">
-                {mistakes.length}
+          {none ? (
+            <div
+              aria-disabled
+              className="flex flex-1 cursor-not-allowed items-center justify-between rounded-lg border border-slate-200 px-4 py-3 opacity-50"
+            >
+              <span className="font-semibold text-slate-700">Extra Study</span>
+              <span className="flex items-center gap-2 text-slate-500">
+                <span className="rounded-full border border-slate-300 px-2.5 py-0.5 text-sm">0</span>
+                ›
               </span>
-              ›
-            </span>
-          </Link>
-          <Link
-            href="/lessons"
-            className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-3 font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-          >
-            Redo Lessons ↺
-          </Link>
+            </div>
+          ) : (
+            <Link
+              href="/reviews?source=mistakes"
+              className="flex flex-1 items-center justify-between rounded-lg border border-slate-200 px-4 py-3 shadow-sm transition-colors hover:bg-slate-50"
+            >
+              <span className="font-semibold text-slate-700">Extra Study</span>
+              <span className="flex items-center gap-2 text-slate-500">
+                <span className="rounded-full border border-slate-300 px-2.5 py-0.5 text-sm">
+                  {mistakes.length}
+                </span>
+                ›
+              </span>
+            </Link>
+          )}
+          {none ? (
+            <div
+              aria-disabled
+              className="flex cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-3 font-semibold text-slate-700 opacity-50"
+            >
+              Redo Lessons ↺
+            </div>
+          ) : (
+            <Link
+              href="/lessons?source=mistakes"
+              className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-3 font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+            >
+              Redo Lessons ↺
+            </Link>
+          )}
         </div>
       </div>
 
@@ -373,7 +398,7 @@ function RecentMistakes({ mistakes }: { mistakes: Mistake[] }) {
           {mistakes.map((m) => (
             <Link
               key={m.id}
-              href={`/subjects/${m.id}`}
+              href={subjectPath(m)}
               className="flex items-center justify-center rounded-lg px-4 py-2 text-xl text-white shadow-sm transition-transform hover:scale-105"
               style={{ backgroundColor: TYPE_COLORS[m.type] }}
             >

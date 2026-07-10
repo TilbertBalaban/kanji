@@ -11,6 +11,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "seed": "tsx --env-file=.env scripts/seed.ts",
     "sync": "tsx --env-file=.env scripts/sync-wanikani.ts",
+    "backfill:audio": "tsx --env-file=.env scripts/backfill-audio.ts",
     "test": "vitest run",
     "fetch:radical-images": "tsx --env-file=.env scripts/fetch-radical-images.ts",
     "fetch:radical-character-images": "tsx --env-file=.env scripts/fetch-radical-character-images.ts"

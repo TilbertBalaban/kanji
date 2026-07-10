@@ -4,6 +4,7 @@
 // Usage: npm run seed
 
 import { PrismaClient } from "@prisma/client";
+import { mapAudioUrls, type WKPronunciationAudio } from "../lib/audio";
 import { USER_IDS } from "../lib/users";
 
 const prisma = new PrismaClient();
@@ -39,13 +40,14 @@ interface WKSubject {
     }[];
     component_subject_ids?: number[];
     amalgamation_subject_ids?: number[];
+    visually_similar_subject_ids?: number[];
     meaning_mnemonic: string;
     meaning_hint?: string | null;
     reading_mnemonic?: string | null;
     reading_hint?: string | null;
     context_sentences?: { en: string; ja: string }[];
     parts_of_speech?: string[];
-    pronunciation_audios?: { url: string; content_type: string }[];
+    pronunciation_audios?: WKPronunciationAudio[];
     lesson_position: number;
     hidden_at: string | null;
   };
@@ -102,6 +104,7 @@ function mapSubject(s: WKSubject) {
     ),
     componentIds: JSON.stringify(d.component_subject_ids ?? []),
     amalgamationIds: JSON.stringify(d.amalgamation_subject_ids ?? []),
+    visuallySimilarIds: JSON.stringify(d.visually_similar_subject_ids ?? []),
     meaningMnemonic: d.meaning_mnemonic ?? "",
     meaningHint: d.meaning_hint ?? null,
     readingMnemonic: d.reading_mnemonic ?? null,
@@ -109,9 +112,7 @@ function mapSubject(s: WKSubject) {
     contextSentences: d.context_sentences ? JSON.stringify(d.context_sentences) : null,
     partsOfSpeech: d.parts_of_speech ? JSON.stringify(d.parts_of_speech) : null,
     audioUrls: d.pronunciation_audios
-      ? JSON.stringify(
-          d.pronunciation_audios.map((a) => ({ url: a.url, contentType: a.content_type })),
-        )
+      ? JSON.stringify(mapAudioUrls(d.pronunciation_audios))
       : null,
     lessonPosition: d.lesson_position ?? 0,
   };

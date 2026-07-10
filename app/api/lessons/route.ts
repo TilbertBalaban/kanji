@@ -78,6 +78,7 @@ export async function GET(req: NextRequest) {
           type: r.type,
           characters: r.characters,
           characterImage: r.characterImage,
+          slug: r.slug,
           primaryMeaning: meanings.find((m) => m.primary)?.meaning ?? meanings[0]?.meaning ?? "",
           primaryReading: readings.find((m) => m.primary)?.reading ?? readings[0]?.reading ?? null,
         },

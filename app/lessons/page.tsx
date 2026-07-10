@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as wanakana from "wanakana";
+import { AudioButton } from "@/components/AudioButton";
 import { MnemonicText } from "@/components/MnemonicText";
+import { ReadingAudio } from "@/components/ReadingAudio";
 import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
 import { checkMeaning, checkReading } from "@/lib/srs";
 import type { SubjectDTO } from "@/lib/serialize";
+import { subjectPath } from "@/lib/subject-url";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
 
-type Phase = "loading" | "learn" | "quiz" | "empty" | "limit";
+type Phase = "loading" | "learn" | "quiz" | "empty" | "limit" | "done";
 // "recall" is the KaniWani-style reverse task: shown the English meaning, type the reading.
 type TaskKind = "meaning" | "reading" | "recall";
 
@@ -21,6 +24,7 @@ interface RelatedSubject {
   type: string;
   characters: string | null;
   characterImage: string | null;
+  slug: string;
   primaryMeaning: string;
   primaryReading: string | null;
 }
@@ -96,7 +100,7 @@ function RelatedGrid({ items }: { items: RelatedSubject[] }) {
       {items.map((r) => (
         <Link
           key={r.id}
-          href={`/subjects/${r.id}`}
+          href={subjectPath(r)}
           className="flex items-center gap-2 rounded-lg px-3 py-2 text-white shadow-sm hover:opacity-90"
           style={{ backgroundColor: TYPE_COLORS[r.type] }}
         >
@@ -126,8 +130,30 @@ export default function LessonsPage() {
   const [extraBatchSize, setExtraBatchSize] = useState(5);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // "Redo Lessons" over recent mistakes: re-teach the lesson info + quiz for the
+  // items missed in the past 24h, with no daily-limit gating and no SRS change.
+  const [mistakesMode] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("source") === "mistakes",
+  );
+
   const load = useCallback((extra = false) => {
     setPhase("loading");
+    if (mistakesMode) {
+      fetch("/api/recent-mistakes")
+        .then((r) => r.json())
+        .then((data: { subjects: LessonSubject[] }) => {
+          setTotalAvailable(data.subjects.length);
+          setSubjects(data.subjects);
+          setSlide(0);
+          setTab(0);
+          setInput("");
+          setFeedback("idle");
+          setPhase(data.subjects.length > 0 ? "learn" : "empty");
+        });
+      return;
+    }
     fetch(extra ? "/api/lessons?extra=1" : "/api/lessons?limit=5")
       .then((r) => r.json())
       .then(
@@ -152,7 +178,7 @@ export default function LessonsPage() {
           else setPhase("empty");
         },
       );
-  }, []);
+  }, [mistakesMode]);
 
   useEffect(load, [load]);
 
@@ -166,13 +192,18 @@ export default function LessonsPage() {
   };
 
   const finishBatch = useCallback(async () => {
+    // Redo is practice only — don't start/advance any SRS assignment.
+    if (mistakesMode) {
+      setPhase("done");
+      return;
+    }
     await fetch("/api/lessons/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ subjectIds: subjects.map((s) => s.id) }),
     });
     load();
-  }, [subjects, load]);
+  }, [subjects, load, mistakesMode]);
 
   const handleQuizSubmit = useCallback(() => {
     const task = quiz[0];
@@ -218,9 +249,27 @@ export default function LessonsPage() {
   if (phase === "empty") {
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
-        <p className="text-2xl">No lessons available right now.</p>
+        <p className="text-2xl">
+          {mistakesMode ? "🎉 No recent mistakes to redo." : "No lessons available right now."}
+        </p>
         <p className="mt-2 text-slate-500">
-          Do your reviews to unlock more items.
+          {mistakesMode
+            ? "Nothing missed in the past 24 hours."
+            : "Do your reviews to unlock more items."}
+        </p>
+        <Link href="/" className="mt-4 inline-block text-sky-600 hover:underline">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  if (phase === "done") {
+    return (
+      <div className="rounded-xl bg-white p-10 text-center shadow">
+        <p className="text-2xl">Nice — you redid your recent mistakes! 🎉</p>
+        <p className="mt-2 text-slate-500">
+          Extra practice only — your SRS wasn&apos;t affected.
         </p>
         <Link href="/" className="mt-4 inline-block text-sky-600 hover:underline">
           Back to dashboard
@@ -283,9 +332,13 @@ export default function LessonsPage() {
       <div className="mx-auto max-w-2xl">
         <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
           <span>
-            Lesson {slide + 1} / {subjects.length}
+            {mistakesMode ? "Redo" : "Lesson"} {slide + 1} / {subjects.length}
           </span>
-          <span>{totalAvailable} lessons in queue</span>
+          <span>
+            {mistakesMode
+              ? "🐢 recent mistakes · no SRS impact"
+              : `${totalAvailable} lessons in queue`}
+          </span>
         </div>
 
         <div className="overflow-hidden rounded-xl bg-white shadow">
@@ -379,18 +432,16 @@ export default function LessonsPage() {
                 <h2 className="mb-2 text-lg font-semibold">
                   {subject.type === "kanji" ? "Readings" : "Reading"}
                 </h2>
-                <p className="text-xl font-medium" lang="ja">
-                  {acceptedReadings
-                    .map((r) => `${r.reading}${r.type ? ` (${r.type})` : ""}`)
-                    .join("、")}
-                </p>
-                {subject.audioUrls.length > 0 && (
-                  <button
-                    onClick={() => new Audio(subject.audioUrls[0].url).play()}
-                    className="mt-3 rounded-lg bg-slate-800 px-4 py-1.5 text-sm text-white hover:bg-slate-700"
-                  >
-                    ▶ Play audio
-                  </button>
+                {subject.audioUrls.length > 0 ? (
+                  <div className="mb-1">
+                    <ReadingAudio audioUrls={subject.audioUrls} />
+                  </div>
+                ) : (
+                  <p className="text-xl font-medium" lang="ja">
+                    {acceptedReadings
+                      .map((r) => `${r.reading}${r.type ? ` (${r.type})` : ""}`)
+                      .join("、")}
+                  </p>
                 )}
                 {subject.readingMnemonic && (
                   <div className="mt-3 text-slate-700">
@@ -496,10 +547,20 @@ export default function LessonsPage() {
             />
           )}
         </div>
-        <div className="bg-slate-800 py-2 text-center text-sm text-white">
+        <div
+          className={`py-2 text-center text-sm ${
+            task.kind === "meaning"
+              ? "bg-gradient-to-b from-slate-100 to-slate-300 text-slate-700"
+              : "bg-gradient-to-b from-slate-700 to-slate-900 text-white"
+          }`}
+        >
           {TYPE_LABELS[task.subject.type]}{" "}
           <span className="font-bold">{task.kind === "meaning" ? "Meaning" : "Reading"}</span>
-          {isRecall && <span className="text-slate-400"> · from English</span>}
+          {isRecall && (
+            <span className={task.kind === "meaning" ? "text-slate-500" : "text-slate-400"}>
+              {" "}· from English
+            </span>
+          )}
         </div>
         <div
           className={`border-t-4 ${
@@ -528,6 +589,17 @@ export default function LessonsPage() {
           />
         </div>
       </div>
+      {(feedback === "correct" || feedback === "incorrect") &&
+        VOCAB_TYPES.has(task.subject.type) &&
+        task.subject.audioUrls.length > 0 && (
+          <div className="mt-4 flex justify-center">
+            <AudioButton
+              key={`${task.subject.id}-${task.kind}-${feedback}`}
+              audioUrls={task.subject.audioUrls}
+              autoPlay={wantsKana}
+            />
+          </div>
+        )}
       {feedback === "incorrect" && (
         <p className="mt-3 text-center text-sm text-red-600">
           Not quite —{" "}

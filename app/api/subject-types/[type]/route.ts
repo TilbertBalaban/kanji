@@ -56,6 +56,7 @@ export async function GET(
       level: s.level,
       characters: s.characters,
       characterImage: s.characterImage,
+      slug: s.slug,
       primaryMeaning:
         (JSON.parse(s.meanings) as { meaning: string; primary: boolean }[]).find((m) => m.primary)
           ?.meaning ?? "",
