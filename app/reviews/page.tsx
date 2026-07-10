@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as wanakana from "wanakana";
 import { AudioButton } from "@/components/AudioButton";
+import { MnemonicText } from "@/components/MnemonicText";
 import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
 import { checkMeaning, checkReading, STAGE_NAMES } from "@/lib/srs";
@@ -59,6 +60,7 @@ export default function ReviewsPage() {
   const [task, setTask] = useState<{ index: number; kind: TaskKind } | null>(null);
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<"idle" | "correct" | "incorrect" | "retry">("idle");
+  const [showDetails, setShowDetails] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
@@ -122,6 +124,7 @@ export default function ReviewsPage() {
     if (!items || !task) return;
     setFeedback("idle");
     setInput("");
+    setShowDetails(false);
     setTask(pickTask(items));
   }, [items, task]);
 
@@ -342,13 +345,74 @@ export default function ReviewsPage() {
               ? `Reading: ${subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ")}`
               : `Meaning: ${subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}`}
           </p>
-          <Link
-            href={subjectPath(subject)}
-            target="_blank"
+          <button
+            type="button"
+            onClick={() => {
+              setShowDetails((s) => !s);
+              // Keep Enter-to-continue working after the click moves focus.
+              inputRef.current?.focus();
+            }}
             className="mt-1 inline-block text-sky-600 hover:underline"
           >
-            View item details
-          </Link>
+            {showDetails ? "Hide item details" : "View item details"}
+          </button>
+          {showDetails && (
+            <div className="mt-3 space-y-4 border-t border-red-200 pt-3 text-left">
+              <div>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Meaning
+                </h3>
+                <p className="mb-1 text-base">
+                  {subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}
+                </p>
+                <MnemonicText text={subject.meaningMnemonic} />
+                {subject.meaningHint && (
+                  <p className="mt-1 rounded bg-white/60 p-2 text-slate-500">
+                    Hint: {subject.meaningHint}
+                  </p>
+                )}
+              </div>
+              {subject.readings.some((r) => r.acceptedAnswer) && (
+                <div>
+                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Reading
+                  </h3>
+                  <p className="mb-1 text-base" lang="ja">
+                    {subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join("、")}
+                  </p>
+                  {subject.readingMnemonic && <MnemonicText text={subject.readingMnemonic} />}
+                  {subject.readingHint && (
+                    <p className="mt-1 rounded bg-white/60 p-2 text-slate-500">
+                      Hint: {subject.readingHint}
+                    </p>
+                  )}
+                </div>
+              )}
+              {subject.contextSentences.length > 0 && (
+                <div>
+                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Context sentences
+                  </h3>
+                  {subject.contextSentences.slice(0, 3).map((s, i) => (
+                    <p key={i} className="mb-2">
+                      <span lang="ja" className="text-base">
+                        {s.ja}
+                      </span>
+                      <br />
+                      <span className="text-slate-500">{s.en}</span>
+                    </p>
+                  ))}
+                </div>
+              )}
+              <Link
+                href={subjectPath(subject)}
+                target="_blank"
+                className="inline-block text-sky-600 hover:underline"
+              >
+                Open full details page ↗
+              </Link>
+            </div>
+          )}
           {task.kind === "meaning" && (
             <div className="mt-3 border-t border-red-200 pt-3 text-left">
               <SynonymManager
