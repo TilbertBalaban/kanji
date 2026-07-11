@@ -1,42 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { recentMistakeSubjectIds } from "@/lib/mistakes";
 import { toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
 import { synonymsBySubject } from "@/lib/synonyms";
 
 export const dynamic = "force-dynamic";
 
-// Subjects answered incorrectly in the past 24h, deduped, most-recent first.
-// Powers both "Recent Mistakes" flows — Extra Study (review-style) and Redo
-// Lessons (lesson-style) — so it returns the SRS stage plus the related
-// components/amalgamations the lesson info tabs need. Both flows are extra
-// practice that must NOT touch SRS, so this endpoint is strictly read-only.
+// Recent Mistakes (WaniKani semantics — see lib/mistakes.ts), deduped,
+// most-recent first. Powers both "Recent Mistakes" flows — Extra Study
+// (review-style) and Redo Lessons (lesson-style) — so it returns the SRS
+// stage plus the related components/amalgamations the lesson info tabs need.
+// Both flows are extra practice that must NOT touch SRS, so this endpoint is
+// strictly read-only.
 export async function GET() {
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const dayAgo = new Date(Date.now() - 24 * 3600_000);
-  const mistakeLogs = await prisma.reviewLog.findMany({
-    where: {
-      userId,
-      createdAt: { gte: dayAgo },
-      OR: [
-        { meaningIncorrectCount: { gt: 0 } },
-        { readingIncorrectCount: { gt: 0 } },
-        { recallIncorrectCount: { gt: 0 } },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-    select: { subjectId: true },
-  });
-
-  const subjectIds: number[] = [];
-  const seen = new Set<number>();
-  for (const { subjectId } of mistakeLogs) {
-    if (seen.has(subjectId)) continue;
-    seen.add(subjectId);
-    subjectIds.push(subjectId);
-  }
+  const subjectIds = await recentMistakeSubjectIds(userId);
 
   if (subjectIds.length === 0) {
     return NextResponse.json({ subjects: [] });

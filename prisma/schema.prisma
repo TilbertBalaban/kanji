@@ -100,8 +100,32 @@ model ReviewLog {
   meaningIncorrectCount Int      @default(0)
   readingIncorrectCount Int      @default(0)
   recallIncorrectCount  Int      @default(0) // English → reading (KaniWani-style) wrong attempts
+  // Correct answers per dimension. In-app reviews record 1 per prompt asked;
+  // rows imported from WaniKani review_statistics carry the between-sync delta
+  // (which may span several reviews). Accuracy = correct / (correct + incorrect).
+  meaningCorrectCount   Int      @default(0)
+  readingCorrectCount   Int      @default(0)
+  recallCorrectCount    Int      @default(0)
 
   @@index([createdAt])
+  @@index([userId])
+}
+
+// Last-seen cumulative answer counts from WaniKani's review_statistics, one
+// row per (user, subject). Each sync diffs fresh statistics against these to
+// reconstruct the reviews done on WaniKani since the previous sync (the API
+// no longer exposes individual review records), then updates them.
+model ReviewStatSnapshot {
+  id               Int      @id @default(autoincrement())
+  userId           String
+  subjectId        Int
+  meaningCorrect   Int
+  meaningIncorrect Int
+  readingCorrect   Int
+  readingIncorrect Int
+  statUpdatedAt    DateTime // WaniKani's data_updated_at (= subject's last review time)
+
+  @@unique([userId, subjectId])
   @@index([userId])
 }
 

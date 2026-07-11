@@ -51,10 +51,20 @@ export async function completeReview(
 ) {
   const assignment = await prisma.assignment.findUnique({
     where: { userId_subjectId: { userId, subjectId } },
+    include: { subject: { select: { type: true } } },
   });
   if (!assignment || !assignment.startedAt) {
     throw new Error(`No started assignment for subject ${subjectId}`);
   }
+
+  // One correct answer per prompt the review asked: meaning always, reading
+  // unless radical, recall (English → reading) for vocabulary.
+  const isVocab =
+    assignment.subject.type === "vocabulary" ||
+    assignment.subject.type === "kana_vocabulary";
+  const meaningCorrectCount = 1;
+  const readingCorrectCount = assignment.subject.type !== "radical" ? 1 : 0;
+  const recallCorrectCount = isVocab ? 1 : 0;
 
   const incorrect = meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
   const startingStage = assignment.srsStage;
@@ -81,6 +91,9 @@ export async function completeReview(
         meaningIncorrectCount,
         readingIncorrectCount,
         recallIncorrectCount,
+        meaningCorrectCount,
+        readingCorrectCount,
+        recallCorrectCount,
       },
     }),
   ]);

@@ -60,6 +60,16 @@ interface WKReviewStatistic {
   };
 }
 
+interface SnapshotRow {
+  userId: string;
+  subjectId: number;
+  meaningCorrect: number;
+  meaningIncorrect: number;
+  readingCorrect: number;
+  readingIncorrect: number;
+  statUpdatedAt: Date;
+}
+
 interface WKUser {
   data: { username: string; level: number };
 }
@@ -69,6 +79,7 @@ export interface SyncResult {
   level: number;
   assignmentsSynced: number;
   synonymsSynced: number;
+  reviewsSynced: number;
   recentMistakesSynced: number;
   skippedHidden: number;
   skippedUnknown: number;
@@ -102,11 +113,11 @@ function toDate(s: string | null): Date | null {
 
 /**
  * Fully rewrite `userId`'s assignments and synonyms from the WaniKani account
- * that owns `apiKey`, and import mistakes from the account's last 24h of
- * reviews as ReviewLog rows so "Recent Mistakes" matches the WaniKani
- * dashboard. Existing local assignments/synonyms for the user are replaced;
- * review logs are only added to. `log` receives human-readable progress lines
- * (defaults to no-op).
+ * that owns `apiKey`, and import the reviews done on WaniKani since the last
+ * sync as ReviewLog rows, so "Recent Mistakes" and "Correct Reviews" match
+ * the WaniKani dashboard. Existing local assignments/synonyms for the user
+ * are replaced; review logs are only added to. `log` receives human-readable
+ * progress lines (defaults to no-op).
  */
 export async function syncFromWaniKani(
   apiKey: string,
@@ -190,30 +201,56 @@ export async function syncFromWaniKani(
     url = collection.pages.next_url;
   }
 
-  // 3. Recent mistakes. WaniKani's dashboard shows subjects answered
-  // incorrectly in the past 24h, but the API no longer exposes review records
-  // (GET /reviews is deprecated and returns an empty collection), so they are
-  // inferred from review_statistics instead: a wrong answer resets that
-  // dimension's current streak and the review's eventual correct answer sets
-  // it to 1, so a statistic updated in the last 24h with
-  // `current_streak === 1 && incorrect > 0` means the subject's most recent
-  // review contained a mistake. (Known edge: a lone correct review in the
-  // window recovering from an older miss looks identical.) Each hit becomes a
-  // ReviewLog row so the dashboard and Extra Study flows pick it up, keyed on
-  // the statistic's update time (= last review time) to stay idempotent
-  // across re-syncs and to age out of the 24h window naturally.
-  const dayAgo = new Date(Date.now() - 24 * 3600_000);
+  // 3. Reviews done on WaniKani. The API no longer exposes review records
+  // (GET /reviews is deprecated and returns an empty collection), so reviews
+  // are reconstructed from review_statistics deltas instead: each sync stores
+  // every subject's cumulative correct/incorrect answer counts as a
+  // ReviewStatSnapshot, and a later sync turns "counts grew since the
+  // snapshot" into one ReviewLog row covering the reviews in between —
+  // incorrect deltas mark genuine mistakes (no streak guessing), and correct
+  // deltas supply the correct answers the accuracy gauge needs. Rows are
+  // keyed on the statistic's update time (= last review time) to stay
+  // idempotent across re-syncs. The first sync only records baselines: with
+  // no snapshot to diff against, lifetime totals say nothing about *when*
+  // answers happened. After that every statistic has a snapshot, so a
+  // statistic without one is a newly-learned subject whose whole history
+  // fits the window (diff from zero).
+  const prevStageBySubject = new Map(
+    (
+      await prisma.assignment.findMany({
+        where: { userId },
+        select: { subjectId: true, srsStage: true },
+      })
+    ).map((a) => [a.subjectId, a.srsStage]),
+  );
+  const snapshots = await prisma.reviewStatSnapshot.findMany({ where: { userId } });
+  const snapshotBySubject = new Map(snapshots.map((s) => [s.subjectId, s]));
+  const isFirstSync = snapshots.length === 0;
+  // Only statistics updated since the newest snapshot can have changed; the
+  // first sync fetches everything to establish baselines. A minute of overlap
+  // absorbs clock skew — unchanged statistics diff to zero and are skipped.
+  let statsUrl = "https://api.wanikani.com/v2/review_statistics";
+  if (!isFirstSync) {
+    const newest = new Date(
+      Math.max(...snapshots.map((s) => s.statUpdatedAt.getTime())) - 60_000,
+    );
+    statsUrl += `?updated_after=${newest.toISOString()}`;
+  }
+
   const stageBySubject = new Map(assignmentRows.map((r) => [r.subjectId, r.srsStage]));
-  const mistakeRows: {
+  const reviewRows: {
     userId: string;
     subjectId: number;
     createdAt: Date;
     startingStage: number;
     endingStage: number;
+    meaningCorrectCount: number;
     meaningIncorrectCount: number;
+    readingCorrectCount: number;
     readingIncorrectCount: number;
   }[] = [];
-  url = `https://api.wanikani.com/v2/review_statistics?updated_after=${dayAgo.toISOString()}`;
+  const freshSnapshots: SnapshotRow[] = [];
+  url = statsUrl;
   page = 0;
   while (url) {
     page++;
@@ -221,25 +258,67 @@ export async function syncFromWaniKani(
     for (const s of collection.data) {
       const d = s.data;
       if (d.hidden || !knownSubjectIds.has(d.subject_id)) continue;
-      const meaningMissed = d.meaning_current_streak === 1 && d.meaning_incorrect > 0;
-      const readingMissed = d.reading_current_streak === 1 && d.reading_incorrect > 0;
-      if (!meaningMissed && !readingMissed) continue;
-      const endingStage = stageBySubject.get(d.subject_id);
-      if (endingStage === undefined) continue;
-      mistakeRows.push({
+      const statUpdatedAt = new Date(s.data_updated_at);
+      freshSnapshots.push({
         userId,
         subjectId: d.subject_id,
-        createdAt: new Date(s.data_updated_at),
-        // The API doesn't expose the pre-review stage; assume the minimum
-        // one-stage drop a missed review causes.
-        startingStage: endingStage + 1,
+        meaningCorrect: d.meaning_correct,
+        meaningIncorrect: d.meaning_incorrect,
+        readingCorrect: d.reading_correct,
+        readingIncorrect: d.reading_incorrect,
+        statUpdatedAt,
+      });
+      if (isFirstSync) continue;
+
+      const prev = snapshotBySubject.get(d.subject_id);
+      const zero = { meaningCorrect: 0, meaningIncorrect: 0, readingCorrect: 0, readingIncorrect: 0 };
+      const base = prev ?? zero;
+      const meaningCorrectCount = d.meaning_correct - base.meaningCorrect;
+      const meaningIncorrectCount = d.meaning_incorrect - base.meaningIncorrect;
+      const readingCorrectCount = d.reading_correct - base.readingCorrect;
+      const readingIncorrectCount = d.reading_incorrect - base.readingIncorrect;
+      const deltas = [
+        meaningCorrectCount,
+        meaningIncorrectCount,
+        readingCorrectCount,
+        readingIncorrectCount,
+      ];
+      // Counts shrinking means WaniKani reset the statistic (e.g. the item
+      // was resurrected) — treat this pull as a fresh baseline.
+      if (deltas.some((n) => n < 0)) continue;
+      if (deltas.every((n) => n === 0)) continue;
+
+      const endingStage =
+        stageBySubject.get(d.subject_id) ?? prevStageBySubject.get(d.subject_id) ?? 1;
+      const hadMistake = meaningIncorrectCount > 0 || readingIncorrectCount > 0;
+      reviewRows.push({
+        userId,
+        subjectId: d.subject_id,
+        createdAt: statUpdatedAt,
+        // The API doesn't expose per-review stages; approximate with the
+        // stage recorded at the previous sync (or the minimum move the
+        // review outcome implies).
+        startingStage:
+          prevStageBySubject.get(d.subject_id) ??
+          (hadMistake ? endingStage + 1 : Math.max(1, endingStage - 1)),
         endingStage,
-        meaningIncorrectCount: meaningMissed ? 1 : 0,
-        readingIncorrectCount: readingMissed ? 1 : 0,
+        meaningCorrectCount,
+        meaningIncorrectCount,
+        readingCorrectCount,
+        readingIncorrectCount,
       });
     }
-    log(`review_statistics page ${page}: ${mistakeRows.length} recent mistakes detected`);
+    log(
+      `review_statistics page ${page}: ${reviewRows.length} reviews reconstructed, ` +
+        `${freshSnapshots.length} snapshots collected`,
+    );
     url = collection.pages.next_url;
+  }
+  const mistakeCount = reviewRows.filter(
+    (r) => r.meaningIncorrectCount > 0 || r.readingIncorrectCount > 0,
+  ).length;
+  if (isFirstSync) {
+    log("first sync: recorded statistic baselines only — reviews accrue from the next sync");
   }
 
   // 4. Rewrite the user's state: clear then insert fresh, so items no longer on
@@ -255,20 +334,32 @@ export async function syncFromWaniKani(
   }
 
   // Review logs are app history, not mirrored WaniKani state, so they are
-  // never cleared — only add mistake rows not already recorded (by a previous
-  // sync of the same review; in-app reviews have their own timestamps).
-  const existingLogs = await prisma.reviewLog.findMany({
-    where: { userId, createdAt: { gte: dayAgo } },
-    select: { subjectId: true, createdAt: true },
-  });
-  const existingKeys = new Set(
-    existingLogs.map((l) => `${l.subjectId}:${l.createdAt.getTime()}`),
-  );
-  const newMistakes = mistakeRows.filter(
-    (m) => !existingKeys.has(`${m.subjectId}:${m.createdAt.getTime()}`),
-  );
-  if (newMistakes.length > 0) {
-    await prisma.reviewLog.createMany({ data: newMistakes });
+  // never cleared — only add rows not already recorded (by a previous sync
+  // of the same review; in-app reviews have their own timestamps).
+  let newReviews: typeof reviewRows = [];
+  if (reviewRows.length > 0) {
+    const oldestNew = new Date(Math.min(...reviewRows.map((r) => r.createdAt.getTime())));
+    const existingLogs = await prisma.reviewLog.findMany({
+      where: { userId, createdAt: { gte: oldestNew } },
+      select: { subjectId: true, createdAt: true },
+    });
+    const existingKeys = new Set(
+      existingLogs.map((l) => `${l.subjectId}:${l.createdAt.getTime()}`),
+    );
+    newReviews = reviewRows.filter(
+      (m) => !existingKeys.has(`${m.subjectId}:${m.createdAt.getTime()}`),
+    );
+    if (newReviews.length > 0) {
+      await prisma.reviewLog.createMany({ data: newReviews });
+    }
+  }
+
+  // Refresh the snapshots for every statistic this sync saw.
+  if (freshSnapshots.length > 0) {
+    await prisma.reviewStatSnapshot.deleteMany({
+      where: { userId, subjectId: { in: freshSnapshots.map((s) => s.subjectId) } },
+    });
+    await prisma.reviewStatSnapshot.createMany({ data: freshSnapshots });
   }
 
   await prisma.userProgress.upsert({
@@ -279,8 +370,9 @@ export async function syncFromWaniKani(
 
   log(
     `Done: ${assignmentRows.length} assignments, ${synonymRows.length} synonyms, ` +
-      `${mistakeRows.length} recent mistakes (${newMistakes.length} new) ` +
-      `for ${userId} (${skippedHidden} hidden, ${skippedUnknown} unknown-subject skipped), ` +
+      `${reviewRows.length} WaniKani reviews reconstructed (${newReviews.length} new, ` +
+      `${mistakeCount} with mistakes) for ${userId} ` +
+      `(${skippedHidden} hidden, ${skippedUnknown} unknown-subject skipped), ` +
       `level set to ${user.data.level}.`,
   );
 
@@ -289,7 +381,8 @@ export async function syncFromWaniKani(
     level: user.data.level,
     assignmentsSynced: assignmentRows.length,
     synonymsSynced: synonymRows.length,
-    recentMistakesSynced: mistakeRows.length,
+    reviewsSynced: reviewRows.length,
+    recentMistakesSynced: mistakeCount,
     skippedHidden,
     skippedUnknown,
   };

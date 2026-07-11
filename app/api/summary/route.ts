@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { reviewAccuracy } from "@/lib/accuracy";
 import { prisma } from "@/lib/db";
+import { recentMistakeSubjectIds } from "@/lib/mistakes";
 import { DAILY_LESSON_LIMIT, getCurrentLevel, lessonsDoneToday } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 import { GURU_STAGE } from "@/lib/srs";
@@ -58,42 +59,24 @@ export async function GET() {
     spread[item.srsStage - 1][spreadGroup(item.subject.type)] += 1;
   }
 
-  // Recent Mistakes: subjects answered incorrectly in the past 24h, most recent
-  // first, deduped to one tile per subject.
-  const dayAgo = new Date(now.getTime() - 24 * 3600_000);
-  const mistakeLogs = await prisma.reviewLog.findMany({
-    where: {
-      userId,
-      createdAt: { gte: dayAgo },
-      OR: [
-        { meaningIncorrectCount: { gt: 0 } },
-        { readingIncorrectCount: { gt: 0 } },
-        { recallIncorrectCount: { gt: 0 } },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      subjectId: true,
-      subject: { select: { type: true, characters: true, characterImage: true } },
-    },
+  // Recent Mistakes: one tile per subject, most recent first; a later correct
+  // review removes an item (WaniKani semantics — see lib/mistakes.ts).
+  const mistakeIds = await recentMistakeSubjectIds(userId);
+  const mistakeSubjects = await prisma.subject.findMany({
+    where: { id: { in: mistakeIds } },
+    select: { id: true, type: true, characters: true, characterImage: true, slug: true },
   });
-  const seen = new Set<number>();
-  const recentMistakes: {
-    id: number;
-    type: string;
-    characters: string | null;
-    characterImage: string | null;
-  }[] = [];
-  for (const log of mistakeLogs) {
-    if (seen.has(log.subjectId)) continue;
-    seen.add(log.subjectId);
-    recentMistakes.push({
-      id: log.subjectId,
-      type: log.subject.type,
-      characters: log.subject.characters,
-      characterImage: log.subject.characterImage,
-    });
-  }
+  const mistakeById = new Map(mistakeSubjects.map((s) => [s.id, s]));
+  const recentMistakes = mistakeIds
+    .map((id) => mistakeById.get(id))
+    .filter((s): s is NonNullable<typeof s> => Boolean(s))
+    .map((s) => ({
+      id: s.id,
+      type: s.type,
+      characters: s.characters,
+      characterImage: s.characterImage,
+      slug: s.slug,
+    }));
 
   // Correct Reviews: per-answer accuracy over the past 7 days and the 7 days
   // before that, for the dashboard Learning Zone gauge.
@@ -103,10 +86,12 @@ export async function GET() {
     where: { userId, createdAt: { gte: twoWeeksAgo } },
     select: {
       createdAt: true,
+      meaningCorrectCount: true,
+      readingCorrectCount: true,
+      recallCorrectCount: true,
       meaningIncorrectCount: true,
       readingIncorrectCount: true,
       recallIncorrectCount: true,
-      subject: { select: { type: true } },
     },
   });
   const correctReviews = {
