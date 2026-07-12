@@ -9,7 +9,7 @@ export function UserBadge() {
 
   const name = user.firstName ?? user.username ?? "";
   return (
-    <div className="ml-auto flex items-center gap-3">
+    <div className="flex items-center gap-3">
       <Link
         href="/profile"
         className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 transition-colors hover:border-slate-500 hover:text-white"

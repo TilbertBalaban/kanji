@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import Link from "next/link";
 import { ClerkProvider, Show } from "@clerk/nextjs";
-import { TypeNavDropdown } from "@/components/TypeNavDropdown";
 import { UserBadge } from "@/components/UserBadge";
 import "./globals.css";
 
@@ -17,17 +16,11 @@ export const metadata: Metadata = {
 };
 
 const NAV = [
-  { href: "/", label: "Dashboard" },
-  { href: "/lessons", label: "Lessons" },
-  { href: "/reviews", label: "Reviews" },
   { href: "/levels", label: "Levels" },
+  { href: "/radicals", label: "Radicals" },
+  { href: "/kanji", label: "Kanji" },
+  { href: "/vocabulary", label: "Vocabulary" },
   { href: "/custom", label: "My Vocab" },
-];
-
-const TYPE_NAV = [
-  { basePath: "/radicals", label: "Radicals" },
-  { basePath: "/kanji", label: "Kanji" },
-  { basePath: "/vocabulary", label: "Vocabulary" },
 ];
 
 export default function RootLayout({
@@ -44,25 +37,20 @@ export default function RootLayout({
               <Link href="/" className="text-lg font-bold tracking-tight">
                 蟹<span className="text-cyan-400">Local</span>
               </Link>
-              <Show when="signed-in">
-                {NAV.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="text-sm text-slate-300 transition-colors hover:text-white"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-                {TYPE_NAV.map((item) => (
-                  <TypeNavDropdown
-                    key={item.basePath}
-                    label={item.label}
-                    basePath={item.basePath}
-                  />
-                ))}
-              </Show>
-              <UserBadge />
+              <div className="ml-auto flex items-center gap-6">
+                <Show when="signed-in">
+                  {NAV.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="text-sm text-slate-300 transition-colors hover:text-white"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </Show>
+                <UserBadge />
+              </div>
             </nav>
           </header>
           <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>

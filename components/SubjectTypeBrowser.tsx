@@ -4,9 +4,13 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type CSSProperties } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
-import { LEVEL_RANGES } from "@/components/TypeNavDropdown";
 import { subjectPath } from "@/lib/subject-url";
 import { TYPE_COLORS } from "@/lib/ui";
+
+const LEVEL_RANGES = Array.from({ length: 6 }, (_, i) => ({
+  from: i * 10 + 1,
+  to: i * 10 + 10,
+}));
 
 interface BrowseSubject {
   id: number;
