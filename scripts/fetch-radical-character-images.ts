@@ -9,13 +9,13 @@
 // Usage: npm run fetch:radical-character-images
 // Safe to re-run: radicals already pointing at a local /radical-images/ path are skipped.
 
-import { PrismaClient } from "@prisma/client";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
+import { prisma } from "../lib/db";
+import { WK_API_BASE, wkFetch } from "../lib/wanikani-api";
 
-const prisma = new PrismaClient();
 const OUT_DIR = path.join(process.cwd(), "public", "radical-images");
-const API_KEY = process.env.WANIKANI_API_KEY;
+const API_KEY = process.env.WANIKANI_API_KEY ?? "";
 const DELAY_MS = 500; // be polite: ~2 req/sec
 
 if (!API_KEY) {
@@ -31,44 +31,28 @@ interface CharacterImage {
 }
 
 async function fetchSvgUrl(id: number): Promise<string | null> {
-  const res = await fetch(`https://api.wanikani.com/v2/subjects/${id}`, {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      "Wanikani-Revision": "20170710",
-    },
-  });
-  if (!res.ok) return null;
-  const body = await res.json();
-  const images: CharacterImage[] = body?.data?.character_images ?? [];
+  const body = await wkFetch<{ data?: { character_images?: CharacterImage[] } }>(
+    API_KEY,
+    `${WK_API_BASE}/subjects/${id}`,
+  );
+  const images = body.data?.character_images ?? [];
   return images.find((i) => i.content_type === "image/svg+xml")?.url ?? null;
 }
 
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
 
-  const radicals = await prisma.subject.findMany({
+  // Some seeds stored "no characters" as empty string rather than NULL.
+  const targets = await prisma.subject.findMany({
     where: {
       type: "radical",
-      characters: null,
+      OR: [{ characters: null }, { characters: "" }],
       // skip ones already fixed to a local path
       NOT: { characterImage: { startsWith: "/radical-images/" } },
     },
     select: { id: true, slug: true },
     orderBy: { level: "asc" },
   });
-  // SQLite stores some as empty string rather than NULL, so also sweep those.
-  const emptyChar = await prisma.subject.findMany({
-    where: {
-      type: "radical",
-      characters: "",
-      NOT: { characterImage: { startsWith: "/radical-images/" } },
-    },
-    select: { id: true, slug: true },
-    orderBy: { level: "asc" },
-  });
-  const targets = [...radicals, ...emptyChar].filter(
-    (r, i, arr) => arr.findIndex((x) => x.id === r.id) === i,
-  );
   console.log(`${targets.length} image-only radicals need a local character image`);
 
   let ok = 0;

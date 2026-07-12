@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { toRelatedSubject } from "@/lib/serialize";
+import { MAX_LEVEL } from "@/lib/srs";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +35,8 @@ export async function GET(
   }
 
   const from = Number(req.nextUrl.searchParams.get("from") ?? 1);
-  const to = Number(req.nextUrl.searchParams.get("to") ?? 60);
-  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > 60 || from > to) {
+  const to = Number(req.nextUrl.searchParams.get("to") ?? MAX_LEVEL);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > MAX_LEVEL || from > to) {
     return NextResponse.json({ error: "invalid level range" }, { status: 400 });
   }
 
@@ -51,18 +53,8 @@ export async function GET(
 
   return NextResponse.json({
     subjects: subjects.map((s) => ({
-      id: s.id,
-      type: s.type,
+      ...toRelatedSubject(s),
       level: s.level,
-      characters: s.characters,
-      characterImage: s.characterImage,
-      slug: s.slug,
-      primaryMeaning:
-        (JSON.parse(s.meanings) as { meaning: string; primary: boolean }[]).find((m) => m.primary)
-          ?.meaning ?? "",
-      primaryReading:
-        (JSON.parse(s.readings) as { reading: string; primary: boolean }[]).find((r) => r.primary)
-          ?.reading ?? null,
       status: status(s.assignments[0] ?? null),
     })),
   });

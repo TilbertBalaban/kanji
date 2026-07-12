@@ -53,15 +53,28 @@ function r2() {
   };
 }
 
-async function download(url: string, attempt = 1): Promise<Buffer> {
+async function download(
+  url: string,
+  attempt = 1,
+): Promise<{ body: Buffer; contentType: string | null }> {
   const res = await fetch(url);
   if (res.status === 429 && attempt <= 5) {
     await new Promise((r) => setTimeout(r, 15_000 * attempt));
     return download(url, attempt + 1);
   }
   if (!res.ok) throw new Error(`${res.status} on ${url}`);
-  return Buffer.from(await res.arrayBuffer());
+  return {
+    body: Buffer.from(await res.arrayBuffer()),
+    contentType: res.headers.get("content-type")?.split(";")[0].trim() ?? null,
+  };
 }
+
+const IMAGE_EXT_BY_TYPE: Record<string, string> = {
+  "image/svg+xml": "svg",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
 
 /**
  * Mirror every subject still pointing at files.wanikani.com to R2 and repoint
@@ -88,9 +101,10 @@ export async function mirrorAssetsToR2(
     return `${base}/${key}`;
   };
 
-  // Radical character images. mapSubject stores the SVG variant's URL, so the
-  // stored URL is downloadable as-is (the PNG variants are CDN-signed and
-  // expire).
+  // Radical character images. mapSubject prefers the SVG variant, but falls
+  // back to another format when a radical ships no SVG — key and serve the
+  // object by what the server actually returned, so PNG bytes are never
+  // declared as image/svg+xml (browsers refuse to render that).
   const radicals = await prisma.subject.findMany({
     where: { characterImage: { contains: "wanikani" } },
     select: { id: true, slug: true, characterImage: true },
@@ -100,8 +114,11 @@ export async function mirrorAssetsToR2(
   let imagesMirrored = 0;
   for (const radical of radicals) {
     try {
-      const body = await download(radical.characterImage!);
-      const url = await upload(`radical-images/${radical.slug}-char.svg`, body, "image/svg+xml");
+      const { body, contentType } = await download(radical.characterImage!);
+      const type = contentType ?? "image/svg+xml";
+      const ext = IMAGE_EXT_BY_TYPE[type];
+      if (!ext) throw new Error(`unexpected content type ${type}`);
+      const url = await upload(`radical-images/${radical.slug}-char.${ext}`, body, type);
       await prisma.subject.update({
         where: { id: radical.id },
         data: { characterImage: url },
@@ -138,7 +155,7 @@ export async function mirrorAssetsToR2(
             mirrored.push(clip); // already on R2
             continue;
           }
-          const body = await download(clip.url);
+          const { body } = await download(clip.url);
           const url = await upload(`audio/${s.id}-${i}.${ext}`, body, clip.contentType);
           mirrored.push({ ...clip, url });
         }

@@ -7,6 +7,7 @@ import { NoteEditor } from "@/components/NoteEditor";
 import { ReadingAudio } from "@/components/ReadingAudio";
 import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
+import { answerCounts, type AccuracyLog } from "@/lib/accuracy";
 import type { SubjectDTO } from "@/lib/serialize";
 import type { Reading } from "@/lib/srs";
 import { STAGE_NAMES } from "@/lib/srs";
@@ -34,14 +35,12 @@ interface SubjectDetailData {
     unlockedAt: string | null;
     startedAt: string | null;
   } | null;
-  reviewLogs: {
+  reviewLogs: ({
     id: number;
     createdAt: string;
     startingStage: number;
     endingStage: number;
-    meaningIncorrectCount: number;
-    readingIncorrectCount: number;
-  }[];
+  } & AccuracyLog)[];
   related: RelatedSubject[];
 }
 
@@ -357,19 +356,21 @@ export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
         <section className="rounded-xl bg-white p-6 shadow">
           <h2 className="mb-3 text-lg font-semibold">Review history</h2>
           <ul className="space-y-1 text-sm">
-            {reviewLogs.map((log) => (
-              <li key={log.id} className="flex justify-between border-b border-slate-100 py-1">
-                <span>{new Date(log.createdAt).toLocaleString()}</span>
-                <span>
-                  {STAGE_NAMES[log.startingStage]} → {STAGE_NAMES[log.endingStage]}
-                  {log.meaningIncorrectCount + log.readingIncorrectCount > 0 && (
-                    <span className="ml-2 text-red-500">
-                      ({log.meaningIncorrectCount + log.readingIncorrectCount} wrong)
-                    </span>
-                  )}
-                </span>
-              </li>
-            ))}
+            {reviewLogs.map((log) => {
+              const counts = answerCounts(log);
+              const wrong = counts.total - counts.correct;
+              return (
+                <li key={log.id} className="flex justify-between border-b border-slate-100 py-1">
+                  <span>{new Date(log.createdAt).toLocaleString()}</span>
+                  <span>
+                    {STAGE_NAMES[log.startingStage]} → {STAGE_NAMES[log.endingStage]}
+                    {wrong > 0 && (
+                      <span className="ml-2 text-red-500">({wrong} wrong)</span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

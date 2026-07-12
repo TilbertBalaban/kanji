@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { noteForSubject } from "./notes";
-import { toSubjectDTO } from "./serialize";
+import { toRelatedSubject, toSubjectDTO } from "./serialize";
 import { synonymsBySubject } from "./synonyms";
 
 // Maps the URL kind segment to the DB `type` filter used to resolve a subject
@@ -50,18 +50,8 @@ export async function buildSubjectDetail(userId: string, subjectId: number) {
     assignment: subject.assignments[0] ?? null,
     reviewLogs: subject.reviewLogs,
     related: related.map((r) => ({
-      id: r.id,
-      type: r.type,
+      ...toRelatedSubject(r),
       level: r.level,
-      characters: r.characters,
-      characterImage: r.characterImage,
-      slug: r.slug,
-      primaryMeaning:
-        (JSON.parse(r.meanings) as { meaning: string; primary: boolean }[]).find((m) => m.primary)
-          ?.meaning ?? "",
-      primaryReading:
-        (JSON.parse(r.readings) as { reading: string; primary: boolean }[]).find((m) => m.primary)
-          ?.reading ?? null,
       srsStage: r.assignments[0]?.srsStage ?? null,
     })),
   };

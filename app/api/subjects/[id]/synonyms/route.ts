@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { parseIntParam } from "@/lib/params";
 import { requireUserId } from "@/lib/user";
 import { normalizeSynonym } from "@/lib/synonyms";
 
@@ -22,7 +23,10 @@ export async function GET(
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const subjectId = Number((await params).id);
+  const subjectId = parseIntParam((await params).id);
+  if (subjectId === null) {
+    return NextResponse.json({ error: "invalid subject id" }, { status: 400 });
+  }
   return NextResponse.json({ synonyms: await currentSynonyms(userId, subjectId) });
 }
 
@@ -34,7 +38,10 @@ export async function POST(
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const subjectId = Number((await params).id);
+  const subjectId = parseIntParam((await params).id);
+  if (subjectId === null) {
+    return NextResponse.json({ error: "invalid subject id" }, { status: 400 });
+  }
   const body = await req.json().catch(() => ({}));
   const synonym = normalizeSynonym(body?.synonym);
   if (!synonym) {
@@ -66,7 +73,10 @@ export async function DELETE(
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const subjectId = Number((await params).id);
+  const subjectId = parseIntParam((await params).id);
+  if (subjectId === null) {
+    return NextResponse.json({ error: "invalid subject id" }, { status: 400 });
+  }
   const body = await req.json().catch(() => ({}));
   const synonym = normalizeSynonym(body?.synonym);
   if (!synonym) {

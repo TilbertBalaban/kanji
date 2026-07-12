@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
-import { GURU_STAGE, STAGE_NAMES } from "@/lib/srs";
+import { GURU_STAGE, MAX_LEVEL, STAGE_NAMES } from "@/lib/srs";
 import { subjectPath } from "@/lib/subject-url";
-import { STAGE_GROUP_COLORS, TYPE_COLORS } from "@/lib/ui";
+import { TYPE_COLORS } from "@/lib/ui";
 
 interface StageBucket {
   stage: number;
@@ -27,8 +27,6 @@ interface Summary {
   lessonCount: number;
   lessonsAvailableToday: number;
   reviewCount: number;
-  levelProgress: { passedKanji: number; totalKanji: number; threshold: number };
-  stageCounts: Record<string, number>;
   forecast: Record<string, number>;
   spread: StageBucket[];
   recentMistakes: Mistake[];
@@ -278,8 +276,8 @@ function LevelProgress({ currentLevel }: { currentLevel: number }) {
           </button>
           <span className="text-sm font-medium">Level {level}</span>
           <button
-            onClick={() => setLevel((l) => Math.min(60, l + 1))}
-            disabled={level >= 60}
+            onClick={() => setLevel((l) => Math.min(MAX_LEVEL, l + 1))}
+            disabled={level >= MAX_LEVEL}
             className="rounded p-1 hover:bg-slate-100 disabled:opacity-30"
             aria-label="Next level"
           >

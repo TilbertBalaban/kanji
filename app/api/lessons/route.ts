@@ -5,7 +5,7 @@ import {
   EXTRA_LESSON_BATCH,
   lessonsDoneToday,
 } from "@/lib/progression";
-import { toSubjectDTO } from "@/lib/serialize";
+import { toRelatedSubject, toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
 import { synonymsBySubject } from "@/lib/synonyms";
 
@@ -22,14 +22,18 @@ export async function GET(req: NextRequest) {
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const limit = Number(req.nextUrl.searchParams.get("limit") ?? 5);
+  const limitParam = Number(req.nextUrl.searchParams.get("limit") ?? 5);
+  const limit = Number.isInteger(limitParam) && limitParam > 0 ? limitParam : 5;
   // ?extra=1 bypasses the daily limit for one opt-in batch of EXTRA_LESSON_BATCH
   const extra = req.nextUrl.searchParams.get("extra") === "1";
 
   const [assignments, doneToday] = await Promise.all([
     prisma.assignment.findMany({
       where: { userId, startedAt: null, unlockedAt: { not: null } },
-      include: { subject: true },
+      select: {
+        subjectId: true,
+        subject: { select: { level: true, type: true, lessonPosition: true } },
+      },
     }),
     lessonsDoneToday(userId),
   ]);
@@ -49,14 +53,18 @@ export async function GET(req: NextRequest) {
     );
   });
 
-  const batchAssignments = assignments.slice(0, batch);
-  const synonyms = await synonymsBySubject(
-    userId,
-    batchAssignments.map((a) => a.subjectId),
-  );
-  const dtos = batchAssignments.map((a) =>
-    toSubjectDTO(a.subject, synonyms.get(a.subjectId) ?? []),
-  );
+  const batchIds = assignments.slice(0, batch).map((a) => a.subjectId);
+  const [batchSubjects, synonyms] = await Promise.all([
+    batchIds.length
+      ? prisma.subject.findMany({ where: { id: { in: batchIds } } })
+      : Promise.resolve([]),
+    synonymsBySubject(userId, batchIds),
+  ]);
+  const subjectById = new Map(batchSubjects.map((s) => [s.id, s]));
+  const dtos = batchIds
+    .map((id) => subjectById.get(id))
+    .filter((s): s is NonNullable<typeof s> => Boolean(s))
+    .map((s) => toSubjectDTO(s, synonyms.get(s.id) ?? []));
 
   // Fetch the related subjects (components + amalgamations) referenced by this
   // batch in one query, so the lesson tabs can show radical/kanji composition
@@ -67,24 +75,7 @@ export async function GET(req: NextRequest) {
   const relatedSubjects = relatedIds.length
     ? await prisma.subject.findMany({ where: { id: { in: relatedIds } } })
     : [];
-  const relatedMap = new Map(
-    relatedSubjects.map((r) => {
-      const meanings = JSON.parse(r.meanings) as { meaning: string; primary: boolean }[];
-      const readings = JSON.parse(r.readings) as { reading: string; primary: boolean }[];
-      return [
-        r.id,
-        {
-          id: r.id,
-          type: r.type,
-          characters: r.characters,
-          characterImage: r.characterImage,
-          slug: r.slug,
-          primaryMeaning: meanings.find((m) => m.primary)?.meaning ?? meanings[0]?.meaning ?? "",
-          primaryReading: readings.find((m) => m.primary)?.reading ?? readings[0]?.reading ?? null,
-        },
-      ];
-    }),
-  );
+  const relatedMap = new Map(relatedSubjects.map((r) => [r.id, toRelatedSubject(r)]));
 
   const subjects = dtos.map((d) => ({
     ...d,

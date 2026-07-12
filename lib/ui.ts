@@ -15,14 +15,8 @@ export const TYPE_LABELS: Record<string, string> = {
   kana_vocabulary: "Vocabulary",
 };
 
-export function stageGroup(stage: number | null): string {
-  if (stage === null || stage === 0) return "locked";
-  if (stage < 5) return "apprentice";
-  if (stage < 7) return "guru";
-  if (stage === 7) return "master";
-  if (stage === 8) return "enlightened";
-  return "burned";
-}
+// The stage model (and its display grouping) lives in lib/srs.ts.
+export { stageGroup } from "./srs";
 
 export const STAGE_GROUP_COLORS: Record<string, string> = {
   locked: "#9ca3af",

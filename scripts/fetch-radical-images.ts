@@ -5,11 +5,10 @@
 // Usage: npm run fetch:radical-images
 // Safe to re-run: already-downloaded radicals are skipped.
 
-import { PrismaClient } from "@prisma/client";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
+import { prisma } from "../lib/db";
 
-const prisma = new PrismaClient();
 const OUT_DIR = path.join(process.cwd(), "public", "radical-images");
 const DELAY_MS = 500; // be polite: ~2 pages/sec
 

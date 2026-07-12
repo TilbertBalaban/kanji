@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parseIntParam } from "@/lib/params";
 import { buildSubjectDetail } from "@/lib/subject-detail";
 import { requireUserId } from "@/lib/user";
 
@@ -11,8 +12,11 @@ export async function GET(
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const { id } = await params;
-  const detail = await buildSubjectDetail(userId, Number(id));
+  const subjectId = parseIntParam((await params).id);
+  if (subjectId === null) {
+    return NextResponse.json({ error: "invalid subject id" }, { status: 400 });
+  }
+  const detail = await buildSubjectDetail(userId, subjectId);
   if (!detail) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

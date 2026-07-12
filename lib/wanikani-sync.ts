@@ -13,8 +13,7 @@
 
 import { prisma } from "./db";
 import { normalizeSynonym } from "./synonyms";
-
-const WK_REVISION = "20170710";
+import { WK_API_BASE, wkFetch } from "./wanikani-api";
 
 interface WKCollection<T> {
   pages: { next_url: string | null };
@@ -85,28 +84,6 @@ export interface SyncResult {
   skippedUnknown: number;
 }
 
-async function wkFetch<T>(apiKey: string, url: string, attempt = 1): Promise<T> {
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Wanikani-Revision": WK_REVISION,
-    },
-  });
-  if (res.status === 429 && attempt <= 5) {
-    // Rate limited (60 req/min) — wait for the window to reset.
-    const wait = 15_000 * attempt;
-    await new Promise((r) => setTimeout(r, wait));
-    return wkFetch<T>(apiKey, url, attempt + 1);
-  }
-  if (res.status === 401) {
-    throw new Error("WaniKani rejected the API key (401 Unauthorized)");
-  }
-  if (!res.ok) {
-    throw new Error(`WaniKani API ${res.status}: ${await res.text()}`);
-  }
-  return res.json();
-}
-
 function toDate(s: string | null): Date | null {
   return s ? new Date(s) : null;
 }
@@ -124,7 +101,7 @@ export async function syncFromWaniKani(
   userId: string,
   log: (msg: string) => void = () => {},
 ): Promise<SyncResult> {
-  const user = await wkFetch<WKUser>(apiKey, "https://api.wanikani.com/v2/user");
+  const user = await wkFetch<WKUser>(apiKey, `${WK_API_BASE}/user`);
   log(`WaniKani account: ${user.data.username} (level ${user.data.level})`);
   log(`Rewriting local user: ${userId}`);
 
@@ -147,7 +124,7 @@ export async function syncFromWaniKani(
   let skippedHidden = 0;
   let skippedUnknown = 0;
 
-  let url: string | null = "https://api.wanikani.com/v2/assignments";
+  let url: string | null = `${WK_API_BASE}/assignments`;
   let page = 0;
   while (url) {
     page++;
@@ -180,7 +157,7 @@ export async function syncFromWaniKani(
   // 2. Collect User Synonyms from study_materials.
   const synonymRows: { userId: string; subjectId: number; synonym: string }[] = [];
   const seen = new Set<string>(); // dedupe on (subjectId, synonym) within this pull
-  url = "https://api.wanikani.com/v2/study_materials";
+  url = `${WK_API_BASE}/study_materials`;
   page = 0;
   while (url) {
     page++;
@@ -229,7 +206,7 @@ export async function syncFromWaniKani(
   // Only statistics updated since the newest snapshot can have changed; the
   // first sync fetches everything to establish baselines. A minute of overlap
   // absorbs clock skew — unchanged statistics diff to zero and are skipped.
-  let statsUrl = "https://api.wanikani.com/v2/review_statistics";
+  let statsUrl = `${WK_API_BASE}/review_statistics`;
   if (!isFirstSync) {
     const newest = new Date(
       Math.max(...snapshots.map((s) => s.statUpdatedAt.getTime())) - 60_000,
@@ -322,16 +299,19 @@ export async function syncFromWaniKani(
   }
 
   // 4. Rewrite the user's state: clear then insert fresh, so items no longer on
-  // the WaniKani account don't linger locally. Then mirror the account level.
-  await prisma.assignment.deleteMany({ where: { userId } });
-  if (assignmentRows.length > 0) {
-    await prisma.assignment.createMany({ data: assignmentRows });
-  }
-
-  await prisma.userSynonym.deleteMany({ where: { userId } });
-  if (synonymRows.length > 0) {
-    await prisma.userSynonym.createMany({ data: synonymRows, skipDuplicates: true });
-  }
+  // the WaniKani account don't linger locally. One transaction — a failure
+  // mid-rewrite must never leave the user with the delete committed and the
+  // insert lost (i.e. zero progress). Then mirror the account level.
+  await prisma.$transaction([
+    prisma.assignment.deleteMany({ where: { userId } }),
+    ...(assignmentRows.length > 0
+      ? [prisma.assignment.createMany({ data: assignmentRows, skipDuplicates: true })]
+      : []),
+    prisma.userSynonym.deleteMany({ where: { userId } }),
+    ...(synonymRows.length > 0
+      ? [prisma.userSynonym.createMany({ data: synonymRows, skipDuplicates: true })]
+      : []),
+  ]);
 
   // Review logs are app history, not mirrored WaniKani state, so they are
   // never cleared — only add rows not already recorded (by a previous sync
@@ -354,12 +334,15 @@ export async function syncFromWaniKani(
     }
   }
 
-  // Refresh the snapshots for every statistic this sync saw.
+  // Refresh the snapshots for every statistic this sync saw (transactional
+  // for the same delete-then-create reason as the assignment rewrite).
   if (freshSnapshots.length > 0) {
-    await prisma.reviewStatSnapshot.deleteMany({
-      where: { userId, subjectId: { in: freshSnapshots.map((s) => s.subjectId) } },
-    });
-    await prisma.reviewStatSnapshot.createMany({ data: freshSnapshots });
+    await prisma.$transaction([
+      prisma.reviewStatSnapshot.deleteMany({
+        where: { userId, subjectId: { in: freshSnapshots.map((s) => s.subjectId) } },
+      }),
+      prisma.reviewStatSnapshot.createMany({ data: freshSnapshots }),
+    ]);
   }
 
   await prisma.userProgress.upsert({

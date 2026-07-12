@@ -52,11 +52,36 @@ export function toSubjectDTO(s: Subject, userSynonyms: string[] = []): SubjectDT
   };
 }
 
-export function primaryMeaning(dto: SubjectDTO): string {
+export function primaryMeaning(dto: Pick<SubjectDTO, "meanings">): string {
   return dto.meanings.find((m) => m.primary)?.meaning ?? dto.meanings[0]?.meaning ?? "";
 }
 
-export function primaryReading(dto: SubjectDTO): string | null {
+export function primaryReading(dto: Pick<SubjectDTO, "readings">): string | null {
   if (dto.readings.length === 0) return null;
   return dto.readings.find((r) => r.primary)?.reading ?? dto.readings[0].reading;
+}
+
+/** The compact tile shape used for components/amalgamations/similar lists. */
+export interface RelatedSubjectDTO {
+  id: number;
+  type: string;
+  characters: string | null;
+  characterImage: string | null;
+  slug: string;
+  primaryMeaning: string;
+  primaryReading: string | null;
+}
+
+export function toRelatedSubject(
+  s: Pick<Subject, "id" | "type" | "characters" | "characterImage" | "slug" | "meanings" | "readings">,
+): RelatedSubjectDTO {
+  return {
+    id: s.id,
+    type: s.type,
+    characters: s.characters,
+    characterImage: s.characterImage,
+    slug: s.slug,
+    primaryMeaning: primaryMeaning({ meanings: JSON.parse(s.meanings) }),
+    primaryReading: primaryReading({ readings: JSON.parse(s.readings) }),
+  };
 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { toRelatedSubject } from "@/lib/serialize";
+import { MAX_LEVEL } from "@/lib/srs";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +15,7 @@ export async function GET(
 
   const { n } = await params;
   const level = Number(n);
-  if (!Number.isInteger(level) || level < 1 || level > 60) {
+  if (!Number.isInteger(level) || level < 1 || level > MAX_LEVEL) {
     return NextResponse.json({ error: "invalid level" }, { status: 400 });
   }
 
@@ -33,17 +35,7 @@ export async function GET(
     subjects: subjects.map((s) => {
       const assignment = s.assignments[0];
       return {
-        id: s.id,
-        type: s.type,
-        characters: s.characters,
-        characterImage: s.characterImage,
-        slug: s.slug,
-        primaryMeaning:
-          (JSON.parse(s.meanings) as { meaning: string; primary: boolean }[]).find((m) => m.primary)
-            ?.meaning ?? "",
-        primaryReading:
-          (JSON.parse(s.readings) as { reading: string; primary: boolean }[]).find((r) => r.primary)
-            ?.reading ?? null,
+        ...toRelatedSubject(s),
         srsStage: assignment?.srsStage ?? null,
         unlocked: !!assignment?.unlockedAt,
         started: !!assignment?.startedAt,

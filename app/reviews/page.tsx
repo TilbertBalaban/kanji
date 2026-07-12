@@ -2,21 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as wanakana from "wanakana";
-import { AudioButton } from "@/components/AudioButton";
 import { MnemonicText } from "@/components/MnemonicText";
-import { SubjectChar } from "@/components/SubjectChar";
+import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
 import { SynonymManager } from "@/components/SynonymManager";
-import { checkMeaning, checkReading, STAGE_NAMES } from "@/lib/srs";
+import { checkMeaning, checkReading, STAGE_NAMES, tasksForSubject } from "@/lib/srs";
 import type { SubjectDTO } from "@/lib/serialize";
 import { subjectPath } from "@/lib/subject-url";
-import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
+import { useMistakesMode } from "@/lib/use-mistakes-mode";
 
 type ReviewSubject = SubjectDTO & { srsStage: number };
-// "recall" is the KaniWani-style reverse task: shown the English meaning, type the reading.
-type TaskKind = "meaning" | "reading" | "recall";
-
-const VOCAB_TYPES = new Set(["vocabulary", "kana_vocabulary"]);
 
 interface Item {
   subject: ReviewSubject;
@@ -35,15 +29,6 @@ interface Toast {
   kind: "up" | "down" | "levelup";
 }
 
-function hasReadingTask(s: ReviewSubject): boolean {
-  return s.type !== "radical" && s.readings.some((r) => r.acceptedAnswer);
-}
-
-// Reverse recall (English → reading) is offered for vocabulary that has a reading.
-function hasRecallTask(s: ReviewSubject): boolean {
-  return VOCAB_TYPES.has(s.type) && s.readings.some((r) => r.acceptedAnswer);
-}
-
 function pickTask(items: Item[]): { index: number; kind: TaskKind } | null {
   const open: { index: number; kind: TaskKind }[] = [];
   items.forEach((item, index) => {
@@ -59,7 +44,7 @@ export default function ReviewsPage() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [task, setTask] = useState<{ index: number; kind: TaskKind } | null>(null);
   const [input, setInput] = useState("");
-  const [feedback, setFeedback] = useState<"idle" | "correct" | "incorrect" | "retry">("idle");
+  const [feedback, setFeedback] = useState<QuizFeedback>("idle");
   const [showDetails, setShowDetails] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [completed, setCompleted] = useState(0);
@@ -68,27 +53,26 @@ export default function ReviewsPage() {
 
   // "Extra Study" over recent mistakes: same quiz UI, sourced from the mistake
   // items and — crucially — with no SRS progression on completion.
-  const [mistakesMode] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("source") === "mistakes",
-  );
+  const mistakesMode = useMistakesMode();
 
   useEffect(() => {
     fetch(mistakesMode ? "/api/recent-mistakes" : "/api/reviews")
       .then((r) => r.json())
       .then((data: { subjects: ReviewSubject[] }) => {
-        const loaded: Item[] = data.subjects.map((subject) => ({
-          subject,
-          needsReading: hasReadingTask(subject),
-          needsRecall: hasRecallTask(subject),
-          meaningDone: false,
-          readingDone: false,
-          recallDone: false,
-          meaningWrong: 0,
-          readingWrong: 0,
-          recallWrong: 0,
-        }));
+        const loaded: Item[] = data.subjects.map((subject) => {
+          const tasks = tasksForSubject(subject);
+          return {
+            subject,
+            needsReading: tasks.reading,
+            needsRecall: tasks.recall,
+            meaningDone: false,
+            readingDone: false,
+            recallDone: false,
+            meaningWrong: 0,
+            readingWrong: 0,
+            recallWrong: 0,
+          };
+        });
         setItems(loaded);
         setTask(pickTask(loaded));
       });
@@ -109,6 +93,11 @@ export default function ReviewsPage() {
         recallIncorrectCount: item.recallWrong,
       }),
     });
+    if (!res.ok) {
+      setToast({ text: "Couldn't save that review — it may repeat later.", kind: "down" });
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
     const result = await res.json();
     if (result.leveledUpTo) {
       setToast({ text: `Level up! You reached level ${result.leveledUpTo} 🎉`, kind: "levelup" });
@@ -225,25 +214,8 @@ export default function ReviewsPage() {
 
   const current = items[task.index];
   const subject = current.subject;
-  const color = TYPE_COLORS[subject.type];
-  const isRecall = task.kind === "recall";
   // Reading and recall are both answered with the reading in kana.
   const wantsKana = task.kind === "reading" || task.kind === "recall";
-  const acceptedMeanings = subject.meanings.filter((m) => m.acceptedAnswer);
-  const promptMeaning =
-    acceptedMeanings.find((m) => m.primary)?.meaning ?? acceptedMeanings[0]?.meaning ?? "";
-  const extraMeanings = acceptedMeanings
-    .filter((m) => m.meaning !== promptMeaning)
-    .map((m) => m.meaning);
-
-  const feedbackClasses =
-    feedback === "correct"
-      ? "bg-green-100 border-green-400"
-      : feedback === "incorrect"
-        ? "bg-red-100 border-red-400"
-        : feedback === "retry"
-          ? "bg-amber-50 border-amber-400 animate-pulse"
-          : "bg-white border-slate-300";
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -265,72 +237,16 @@ export default function ReviewsPage() {
         />
       </div>
 
-      <div className="overflow-hidden rounded-xl shadow">
-        <div
-          className="subject-tile flex min-h-48 items-center justify-center p-8"
-          style={{ backgroundColor: color }}
-        >
-          {isRecall ? (
-            <div className="text-center">
-              <p className="text-4xl font-medium leading-snug">{promptMeaning}</p>
-              {extraMeanings.length > 0 && (
-                <p className="mt-2 text-lg opacity-80">{extraMeanings.join(", ")}</p>
-              )}
-            </div>
-          ) : (
-            <SubjectChar
-              characters={subject.characters}
-              characterImage={subject.characterImage}
-              className="text-7xl font-medium"
-            />
-          )}
-        </div>
-        <div
-          className={`py-2 text-center text-sm ${
-            task.kind === "meaning"
-              ? "bg-gradient-to-b from-slate-100 to-slate-300 text-slate-700"
-              : "bg-gradient-to-b from-slate-700 to-slate-900 text-white"
-          }`}
-        >
-          {TYPE_LABELS[subject.type]}{" "}
-          <span className="font-bold">{task.kind === "meaning" ? "Meaning" : "Reading"}</span>
-          {isRecall && (
-            <span className={task.kind === "meaning" ? "text-slate-500" : "text-slate-400"}>
-              {" "}· from English
-            </span>
-          )}
-        </div>
-        <div className={`border-t-4 transition-colors ${feedbackClasses}`}>
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setInput(wantsKana ? wanakana.toKana(raw, { IMEMode: true }) : raw);
-            }}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            placeholder={wantsKana ? "答え (kana)" : "Your answer (English)"}
-            className="w-full bg-transparent p-4 text-center text-xl outline-none"
-            lang={wantsKana ? "ja" : "en"}
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            readOnly={feedback === "correct" || feedback === "incorrect"}
-          />
-        </div>
-      </div>
-
-      {(feedback === "correct" || feedback === "incorrect") &&
-        VOCAB_TYPES.has(subject.type) &&
-        subject.audioUrls.length > 0 && (
-          <div className="mt-4 flex justify-center">
-            <AudioButton
-              key={`${subject.id}-${task.kind}-${feedback}`}
-              audioUrls={subject.audioUrls}
-              autoPlay={wantsKana}
-            />
-          </div>
-        )}
+      <QuizCard
+        subject={subject}
+        kind={task.kind}
+        input={input}
+        onInputChange={setInput}
+        onSubmit={handleSubmit}
+        feedback={feedback}
+        inputRef={inputRef}
+        size="large"
+      />
 
       {feedback === "retry" && (
         <p className="mt-3 text-center text-sm text-amber-600">

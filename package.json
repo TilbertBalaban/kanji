@@ -12,7 +12,6 @@
     "seed": "tsx --env-file=.env scripts/seed.ts",
     "sync": "tsx --env-file=.env scripts/sync-wanikani.ts",
     "sync:content": "tsx --env-file=.env scripts/sync-content.ts",
-    "migrate:user": "tsx --env-file=.env scripts/migrate-user-ids.ts",
     "backfill:audio": "tsx --env-file=.env scripts/backfill-audio.ts",
     "test": "vitest run",
     "fetch:radical-images": "tsx --env-file=.env scripts/fetch-radical-images.ts",

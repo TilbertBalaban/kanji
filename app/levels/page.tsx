@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { MAX_LEVEL } from "@/lib/srs";
 
 export default function LevelsPage() {
   const [currentLevel, setCurrentLevel] = useState<number | null>(null);
@@ -16,7 +17,7 @@ export default function LevelsPage() {
     <div>
       <h1 className="mb-6 text-2xl font-bold">Levels</h1>
       <div className="grid grid-cols-6 gap-3 sm:grid-cols-10">
-        {Array.from({ length: 60 }, (_, i) => i + 1).map((level) => {
+        {Array.from({ length: MAX_LEVEL }, (_, i) => i + 1).map((level) => {
           const isCurrent = level === currentLevel;
           const isPast = currentLevel !== null && level < currentLevel;
           return (

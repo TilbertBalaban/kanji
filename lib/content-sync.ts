@@ -19,8 +19,7 @@
 
 import { prisma } from "./db";
 import { mapAudioUrls, type WKPronunciationAudio } from "./audio";
-
-const WK_REVISION = "20170710";
+import { WK_API_BASE, wkFetch } from "./wanikani-api";
 
 export interface WKCollection<T> {
   pages: { next_url: string | null };
@@ -60,30 +59,11 @@ export interface WKSubject {
   };
 }
 
-export async function fetchSubjectPage(
+export function fetchSubjectPage(
   apiKey: string,
   url: string,
-  attempt = 1,
 ): Promise<WKCollection<WKSubject>> {
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Wanikani-Revision": WK_REVISION,
-    },
-  });
-  if (res.status === 429 && attempt <= 5) {
-    // Rate limited (60 req/min) — wait for the window to reset.
-    const wait = 15_000 * attempt;
-    await new Promise((r) => setTimeout(r, wait));
-    return fetchSubjectPage(apiKey, url, attempt + 1);
-  }
-  if (res.status === 401) {
-    throw new Error("WaniKani rejected the API key (401 Unauthorized)");
-  }
-  if (!res.ok) {
-    throw new Error(`WaniKani API ${res.status}: ${await res.text()}`);
-  }
-  return res.json();
+  return wkFetch<WKCollection<WKSubject>>(apiKey, url);
 }
 
 export function mapSubject(s: WKSubject) {
@@ -152,8 +132,8 @@ export async function syncContentFromWaniKani(
   log: (msg: string) => void = () => {},
 ): Promise<ContentSyncResult> {
   let url: string | null = updatedAfter
-    ? `https://api.wanikani.com/v2/subjects?updated_after=${encodeURIComponent(updatedAfter.toISOString())}`
-    : "https://api.wanikani.com/v2/subjects";
+    ? `${WK_API_BASE}/subjects?updated_after=${encodeURIComponent(updatedAfter.toISOString())}`
+    : `${WK_API_BASE}/subjects`;
 
   let upserted = 0;
   let skippedHidden = 0;
@@ -175,21 +155,33 @@ export async function syncContentFromWaniKani(
     });
     const existingById = new Map(existing.map((e) => [e.id, e]));
 
-    for (const s of visible) {
-      const mapped = mapSubject(s);
-      const current = existingById.get(s.id);
-      const update = { ...mapped };
-      if (current?.characterImage && !current.characterImage.includes("wanikani")) {
-        update.characterImage = current.characterImage;
-      }
-      if (current?.audioUrls && !current.audioUrls.includes("wanikani")) {
-        update.audioUrls = current.audioUrls;
-      }
-      await prisma.subject.upsert({
-        where: { id: s.id },
-        create: mapped,
-        update,
+    // Batch the page's writes: one createMany for brand-new subjects, one
+    // transaction of updates for the rest — instead of a round trip per
+    // subject (the initial seed covers ~9,000 of them).
+    const newSubjects = visible.filter((s) => !existingById.has(s.id));
+    if (newSubjects.length > 0) {
+      await prisma.subject.createMany({
+        data: newSubjects.map(mapSubject),
+        skipDuplicates: true,
       });
+    }
+    const updates = visible
+      .filter((s) => existingById.has(s.id))
+      .map((s) => {
+        const current = existingById.get(s.id)!;
+        const update = { ...mapSubject(s) };
+        if (current.characterImage && !current.characterImage.includes("wanikani")) {
+          update.characterImage = current.characterImage;
+        }
+        if (current.audioUrls && !current.audioUrls.includes("wanikani")) {
+          update.audioUrls = current.audioUrls;
+        }
+        return prisma.subject.update({ where: { id: s.id }, data: update });
+      });
+    if (updates.length > 0) {
+      await prisma.$transaction(updates);
+    }
+    for (const s of visible) {
       updatedSubjects.push({
         id: s.id,
         type: s.object,

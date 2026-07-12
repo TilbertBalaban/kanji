@@ -5,11 +5,9 @@ import { ensureUserInitialized } from "./progression";
 // User identity comes from Clerk. Database rows are keyed by the Clerk user id
 // (e.g. "user_2ab..."), so no local user table is needed.
 
-/** The current Clerk user id, or null if not signed in. */
-export async function getCurrentUserId(): Promise<string | null> {
-  const { userId } = await auth();
-  return userId;
-}
+// Initialization is one-time per user; remember who's done so steady-state
+// requests skip the extra DB round trip (per serverless instance).
+const initializedUsers = new Set<string>();
 
 /**
  * Resolve the current user for an API route. On success returns { userId }
@@ -25,6 +23,9 @@ export async function requireUserId(): Promise<
       response: NextResponse.json({ error: "Not signed in" }, { status: 401 }),
     };
   }
-  await ensureUserInitialized(userId);
+  if (!initializedUsers.has(userId)) {
+    await ensureUserInitialized(userId);
+    initializedUsers.add(userId);
+  }
   return { userId };
 }

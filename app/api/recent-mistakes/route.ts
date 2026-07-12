@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recentMistakeSubjectIds } from "@/lib/mistakes";
-import { toSubjectDTO } from "@/lib/serialize";
+import { toRelatedSubject, toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
 import { synonymsBySubject } from "@/lib/synonyms";
 
@@ -48,24 +48,7 @@ export async function GET() {
   const relatedSubjects = relatedIds.length
     ? await prisma.subject.findMany({ where: { id: { in: relatedIds } } })
     : [];
-  const relatedMap = new Map(
-    relatedSubjects.map((r) => {
-      const meanings = JSON.parse(r.meanings) as { meaning: string; primary: boolean }[];
-      const readings = JSON.parse(r.readings) as { reading: string; primary: boolean }[];
-      return [
-        r.id,
-        {
-          id: r.id,
-          type: r.type,
-          characters: r.characters,
-          characterImage: r.characterImage,
-          slug: r.slug,
-          primaryMeaning: meanings.find((m) => m.primary)?.meaning ?? meanings[0]?.meaning ?? "",
-          primaryReading: readings.find((m) => m.primary)?.reading ?? readings[0]?.reading ?? null,
-        },
-      ];
-    }),
-  );
+  const relatedMap = new Map(relatedSubjects.map((r) => [r.id, toRelatedSubject(r)]));
 
   const subjects = dtos.map(({ dto, srsStage }) => ({
     ...dto,

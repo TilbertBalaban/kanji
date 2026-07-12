@@ -18,6 +18,43 @@ export const STAGE_NAMES: Record<number, string> = {
 export const GURU_STAGE = 5;
 export const BURNED_STAGE = 9;
 
+// WaniKani's last level. Level-up stops here, and the level browser/pickers
+// share the same bound.
+export const MAX_LEVEL = 60;
+
+/** Bucket a stage into the WaniKani display groups (null/0 = not started). */
+export function stageGroup(stage: number | null): string {
+  if (stage === null || stage === 0) return "locked";
+  if (stage < GURU_STAGE) return "apprentice";
+  if (stage < 7) return "guru";
+  if (stage === 7) return "master";
+  if (stage === 8) return "enlightened";
+  return "burned";
+}
+
+export function isVocabulary(type: string): boolean {
+  return type === "vocabulary" || type === "kana_vocabulary";
+}
+
+/**
+ * Which prompts a review or lesson quiz asks for a subject: meaning always,
+ * reading unless radical, recall (English → reading) for vocabulary — the
+ * latter two only when the subject actually has an accepted reading
+ * (kana_vocabulary ships none). The single source of truth shared by the quiz
+ * pages and completeReview, so logged answer counts always match the prompts
+ * that were asked.
+ */
+export function tasksForSubject(subject: {
+  type: string;
+  readings: Pick<Reading, "acceptedAnswer">[];
+}): { reading: boolean; recall: boolean } {
+  const hasReading = subject.readings.some((r) => r.acceptedAnswer);
+  return {
+    reading: subject.type !== "radical" && hasReading,
+    recall: isVocabulary(subject.type) && hasReading,
+  };
+}
+
 // Hours until next review after reaching a stage. One hour is shaved off
 // day-multiple intervals so reviews stay available at the same time of day.
 const STAGE_INTERVAL_HOURS: Record<number, number> = {
@@ -46,7 +83,8 @@ export function nextStage(currentStage: number, incorrectCount: number): number 
   if (incorrectCount === 0) return Math.min(currentStage + 1, BURNED_STAGE);
   const penaltyFactor = currentStage >= GURU_STAGE ? 2 : 1;
   const adjustment = Math.ceil(incorrectCount / 2) * penaltyFactor;
-  return Math.max(currentStage - adjustment, 1);
+  // Clamp both ends so a bad input can never push a stage outside the model.
+  return Math.min(Math.max(currentStage - adjustment, 1), BURNED_STAGE);
 }
 
 // ---------- Answer checking ----------

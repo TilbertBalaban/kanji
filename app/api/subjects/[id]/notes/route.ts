@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { parseIntParam } from "@/lib/params";
 import { requireUserId } from "@/lib/user";
 import { noteForSubject, normalizeNote } from "@/lib/notes";
 
@@ -13,7 +14,10 @@ export async function GET(
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const subjectId = Number((await params).id);
+  const subjectId = parseIntParam((await params).id);
+  if (subjectId === null) {
+    return NextResponse.json({ error: "invalid subject id" }, { status: 400 });
+  }
   return NextResponse.json({ note: await noteForSubject(userId, subjectId) });
 }
 
@@ -25,7 +29,10 @@ export async function PUT(
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const subjectId = Number((await params).id);
+  const subjectId = parseIntParam((await params).id);
+  if (subjectId === null) {
+    return NextResponse.json({ error: "invalid subject id" }, { status: 400 });
+  }
   const body = await req.json().catch(() => ({}));
   const field = body?.field;
   if (field !== "meaning" && field !== "reading") {

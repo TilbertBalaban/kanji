@@ -35,8 +35,15 @@ export async function GET(req: NextRequest) {
     const result = await syncContentFromWaniKani(apiKey, updatedAfter);
     // New subjects arrive pointing at files.wanikani.com; mirror them to R2 in
     // the same run so the app never serves assets from WaniKani. Failed rows
-    // keep their WaniKani URL and are retried on the next run.
-    const assets = await mirrorAssetsToR2();
+    // keep their WaniKani URL and are retried on the next run. A mirror
+    // failure (e.g. R2 not configured) must not turn a successful sync into a
+    // failing cron run, so it's reported alongside the result instead.
+    let assets;
+    try {
+      assets = await mirrorAssetsToR2();
+    } catch (e) {
+      assets = { error: e instanceof Error ? e.message : "Asset mirror failed" };
+    }
     return NextResponse.json({
       ok: true,
       updatedAfter: updatedAfter.toISOString(),

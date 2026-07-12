@@ -2,36 +2,22 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as wanakana from "wanakana";
-import { AudioButton } from "@/components/AudioButton";
 import { MnemonicText } from "@/components/MnemonicText";
+import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
 import { ReadingAudio } from "@/components/ReadingAudio";
 import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
-import { checkMeaning, checkReading } from "@/lib/srs";
-import type { SubjectDTO } from "@/lib/serialize";
+import { checkMeaning, checkReading, isVocabulary, tasksForSubject } from "@/lib/srs";
+import type { RelatedSubjectDTO, SubjectDTO } from "@/lib/serialize";
 import { subjectPath } from "@/lib/subject-url";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
+import { useMistakesMode } from "@/lib/use-mistakes-mode";
 
 type Phase = "loading" | "learn" | "quiz" | "empty" | "limit" | "done";
-// "recall" is the KaniWani-style reverse task: shown the English meaning, type the reading.
-type TaskKind = "meaning" | "reading" | "recall";
-
-const VOCAB_TYPES = new Set(["vocabulary", "kana_vocabulary"]);
-
-interface RelatedSubject {
-  id: number;
-  type: string;
-  characters: string | null;
-  characterImage: string | null;
-  slug: string;
-  primaryMeaning: string;
-  primaryReading: string | null;
-}
 
 interface LessonSubject extends SubjectDTO {
-  components: RelatedSubject[];
-  amalgamations: RelatedSubject[];
+  components: RelatedSubjectDTO[];
+  amalgamations: RelatedSubjectDTO[];
 }
 
 interface QuizTask {
@@ -42,14 +28,11 @@ interface QuizTask {
 function buildQuizTasks(subjects: LessonSubject[]): QuizTask[] {
   const tasks: QuizTask[] = [];
   for (const subject of subjects) {
+    const wanted = tasksForSubject(subject);
     tasks.push({ subject, kind: "meaning" });
-    if (subject.type !== "radical" && subject.readings.some((r) => r.acceptedAnswer)) {
-      tasks.push({ subject, kind: "reading" });
-    }
+    if (wanted.reading) tasks.push({ subject, kind: "reading" });
     // Reverse recall (English → reading) for vocabulary that has a reading.
-    if (VOCAB_TYPES.has(subject.type) && subject.readings.some((r) => r.acceptedAnswer)) {
-      tasks.push({ subject, kind: "recall" });
-    }
+    if (wanted.recall) tasks.push({ subject, kind: "recall" });
   }
   // shuffle
   for (let i = tasks.length - 1; i > 0; i--) {
@@ -70,7 +53,7 @@ interface TabDef {
 // examples/context tabs are omitted when the subject has no data for them.
 function buildTabs(subject: LessonSubject): TabDef[] {
   const tabs: TabDef[] = [];
-  const isVocab = subject.type === "vocabulary" || subject.type === "kana_vocabulary";
+  const isVocab = isVocabulary(subject.type);
   const hasReadings = subject.readings.some((r) => r.acceptedAnswer);
 
   if (subject.type === "kanji" && subject.components.length > 0) {
@@ -94,7 +77,7 @@ function buildTabs(subject: LessonSubject): TabDef[] {
   return tabs;
 }
 
-function RelatedGrid({ items }: { items: RelatedSubject[] }) {
+function RelatedGrid({ items }: { items: RelatedSubjectDTO[] }) {
   return (
     <div className="flex flex-wrap gap-3">
       {items.map((r) => (
@@ -124,7 +107,7 @@ export default function LessonsPage() {
   const [tab, setTab] = useState(0);
   const [quiz, setQuiz] = useState<QuizTask[]>([]);
   const [input, setInput] = useState("");
-  const [feedback, setFeedback] = useState<"idle" | "correct" | "incorrect" | "retry">("idle");
+  const [feedback, setFeedback] = useState<QuizFeedback>("idle");
   const [doneToday, setDoneToday] = useState(0);
   const [dailyLimit, setDailyLimit] = useState(10);
   const [extraBatchSize, setExtraBatchSize] = useState(5);
@@ -132,11 +115,7 @@ export default function LessonsPage() {
 
   // "Redo Lessons" over recent mistakes: re-teach the lesson info + quiz for the
   // items missed in the past 24h, with no daily-limit gating and no SRS change.
-  const [mistakesMode] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("source") === "mistakes",
-  );
+  const mistakesMode = useMistakesMode();
 
   const load = useCallback((extra = false) => {
     setPhase("loading");
@@ -306,7 +285,7 @@ export default function LessonsPage() {
     const acceptedReadings = subject.readings.filter((r) => r.acceptedAnswer);
     const tabs = buildTabs(subject);
     const activeTab = tabs[Math.min(tab, tabs.length - 1)];
-    const isVocab = subject.type === "vocabulary" || subject.type === "kana_vocabulary";
+    const isVocab = isVocabulary(subject.type);
     const isLast = slide === subjects.length - 1;
     const onLastTab = tab >= tabs.length - 1;
 
@@ -511,95 +490,24 @@ export default function LessonsPage() {
   // phase === "quiz"
   const task = quiz[0];
   if (!task) return <p className="text-slate-500">Saving…</p>;
-  const isRecall = task.kind === "recall";
   // Reading and recall are both answered with the reading in kana.
   const wantsKana = task.kind === "reading" || task.kind === "recall";
-  const color = TYPE_COLORS[task.subject.type];
-  const acceptedMeanings = task.subject.meanings.filter((m) => m.acceptedAnswer);
-  const promptMeaning =
-    acceptedMeanings.find((m) => m.primary)?.meaning ?? acceptedMeanings[0]?.meaning ?? "";
-  const extraMeanings = acceptedMeanings
-    .filter((m) => m.meaning !== promptMeaning)
-    .map((m) => m.meaning);
 
   return (
     <div className="mx-auto max-w-2xl">
       <p className="mb-4 text-sm text-slate-500">
         Quiz: answer every item correctly to finish the batch ({quiz.length} prompts left)
       </p>
-      <div className="overflow-hidden rounded-xl shadow">
-        <div
-          className="subject-tile flex min-h-40 items-center justify-center p-8"
-          style={{ backgroundColor: color }}
-        >
-          {isRecall ? (
-            <div className="text-center">
-              <p className="text-4xl font-medium leading-snug">{promptMeaning}</p>
-              {extraMeanings.length > 0 && (
-                <p className="mt-2 text-lg opacity-80">{extraMeanings.join(", ")}</p>
-              )}
-            </div>
-          ) : (
-            <SubjectChar
-              characters={task.subject.characters}
-              characterImage={task.subject.characterImage}
-              className="text-6xl font-medium"
-            />
-          )}
-        </div>
-        <div
-          className={`py-2 text-center text-sm ${
-            task.kind === "meaning"
-              ? "bg-gradient-to-b from-slate-100 to-slate-300 text-slate-700"
-              : "bg-gradient-to-b from-slate-700 to-slate-900 text-white"
-          }`}
-        >
-          {TYPE_LABELS[task.subject.type]}{" "}
-          <span className="font-bold">{task.kind === "meaning" ? "Meaning" : "Reading"}</span>
-          {isRecall && (
-            <span className={task.kind === "meaning" ? "text-slate-500" : "text-slate-400"}>
-              {" "}· from English
-            </span>
-          )}
-        </div>
-        <div
-          className={`border-t-4 ${
-            feedback === "correct"
-              ? "border-green-400 bg-green-100"
-              : feedback === "incorrect"
-                ? "border-red-400 bg-red-100"
-                : feedback === "retry"
-                  ? "animate-pulse border-amber-400 bg-amber-50"
-                  : "border-slate-300 bg-white"
-          }`}
-        >
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setInput(wantsKana ? wanakana.toKana(raw, { IMEMode: true }) : raw);
-            }}
-            onKeyDown={(e) => e.key === "Enter" && handleQuizSubmit()}
-            placeholder={wantsKana ? "答え (kana)" : "Your answer (English)"}
-            className="w-full bg-transparent p-4 text-center text-xl outline-none"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-        </div>
-      </div>
-      {(feedback === "correct" || feedback === "incorrect") &&
-        VOCAB_TYPES.has(task.subject.type) &&
-        task.subject.audioUrls.length > 0 && (
-          <div className="mt-4 flex justify-center">
-            <AudioButton
-              key={`${task.subject.id}-${task.kind}-${feedback}`}
-              audioUrls={task.subject.audioUrls}
-              autoPlay={wantsKana}
-            />
-          </div>
-        )}
+      <QuizCard
+        subject={task.subject}
+        kind={task.kind}
+        input={input}
+        onInputChange={setInput}
+        onSubmit={handleQuizSubmit}
+        feedback={feedback}
+        inputRef={inputRef}
+        size="compact"
+      />
       {feedback === "incorrect" && (
         <p className="mt-3 text-center text-sm text-red-600">
           Not quite —{" "}

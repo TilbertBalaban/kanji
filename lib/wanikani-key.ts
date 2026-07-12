@@ -1,4 +1,5 @@
 import { clerkClient } from "@clerk/nextjs/server";
+import { WK_API_BASE, wkFetch } from "./wanikani-api";
 
 // The per-user WaniKani API token lives in Clerk private metadata: it is only
 // readable with the Clerk secret key (never sent to the browser), and it needs
@@ -28,15 +29,10 @@ export function maskApiKey(key: string): string {
 
 /** Check a token against the WaniKani API. Returns the account's username. */
 export async function validateApiKey(apiKey: string): Promise<string> {
-  const res = await fetch("https://api.wanikani.com/v2/user", {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Wanikani-Revision": "20170710",
-    },
-    cache: "no-store",
-  });
-  if (res.status === 401) throw new Error("WaniKani rejected this API token");
-  if (!res.ok) throw new Error(`WaniKani API error (${res.status})`);
-  const data = (await res.json()) as { data?: { username?: string } };
+  const data = await wkFetch<{ data?: { username?: string } }>(
+    apiKey,
+    `${WK_API_BASE}/user`,
+    { cache: "no-store" },
+  );
   return data.data?.username ?? "unknown";
 }

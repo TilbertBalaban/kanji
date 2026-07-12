@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
 import { subjectPath } from "@/lib/subject-url";
+import { MAX_LEVEL } from "@/lib/srs";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS } from "@/lib/ui";
 
 interface LevelSubject {
@@ -49,7 +50,7 @@ export default function LevelPage({ params }: { params: Promise<{ n: string }> }
               ← Level {level - 1}
             </Link>
           )}
-          {level < 60 && (
+          {level < MAX_LEVEL && (
             <Link href={`/levels/${level + 1}`} className="text-sky-600 hover:underline">
               Level {level + 1} →
             </Link>
