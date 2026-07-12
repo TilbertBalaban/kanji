@@ -14,7 +14,7 @@ export type QuizFeedback = "idle" | "correct" | "incorrect" | "retry";
 
 export type QuizSubject = Pick<
   SubjectDTO,
-  "id" | "type" | "characters" | "characterImage" | "meanings" | "readings" | "audioUrls"
+  "id" | "type" | "characters" | "characterImage" | "meanings" | "readings" | "audioUrls" | "userSynonyms"
 >;
 
 // The quiz prompt card shared by reviews and the lesson quiz: subject tile
@@ -54,9 +54,17 @@ export function QuizCard({
   const acceptedMeanings = subject.meanings.filter((m) => m.acceptedAnswer);
   const promptMeaning =
     acceptedMeanings.find((m) => m.primary)?.meaning ?? acceptedMeanings[0]?.meaning ?? "";
-  const extraMeanings = acceptedMeanings
-    .filter((m) => m.meaning !== promptMeaning)
-    .map((m) => m.meaning);
+  // Alternate meanings plus the user's own synonyms, deduped case-insensitively.
+  const seenMeanings = new Set([promptMeaning.toLowerCase()]);
+  const extraMeanings = [
+    ...acceptedMeanings.map((m) => m.meaning),
+    ...subject.userSynonyms,
+  ].filter((m) => {
+    const key = m.toLowerCase();
+    if (seenMeanings.has(key)) return false;
+    seenMeanings.add(key);
+    return true;
+  });
 
   // After a correct kana answer, show the word as it's written (ふとい → 太い).
   const displayValue =
@@ -158,7 +166,7 @@ export function QuizCard({
             <AudioButton
               key={`${subject.id}-${kind}-${feedback}`}
               audioUrls={subject.audioUrls}
-              autoPlay={wantsKana}
+              autoPlay={wantsKana && feedback === "correct"}
             />
           </div>
         )}

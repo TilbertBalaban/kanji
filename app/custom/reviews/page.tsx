@@ -78,6 +78,7 @@ export default function CustomReviewsPage() {
               meanings: asMeanings(vocab.meanings),
               readings: asReadings(vocab.readings),
               audioUrls: [],
+              userSynonyms: [],
             },
             needsReading: tasks.reading,
             needsRecall: tasks.recall,

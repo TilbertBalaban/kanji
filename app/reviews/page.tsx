@@ -52,7 +52,6 @@ export default function ReviewsPage() {
   const inputCharsRef = useRef("");
   const [showDetails, setShowDetails] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -149,8 +148,6 @@ export default function ReviewsPage() {
       return;
     }
     setInfoMessage(verdict.message);
-    // The answer is graded — open the full item info, like WaniKani's panel.
-    setShowDetails(true);
 
     const doneKey =
       task.kind === "meaning" ? "meaningDone" : task.kind === "reading" ? "readingDone" : "recallDone";
@@ -168,7 +165,6 @@ export default function ReviewsPage() {
         (!done.needsReading || done.readingDone) &&
         (!done.needsRecall || done.recallDone)
       ) {
-        setCompleted((c) => c + 1);
         // Extra Study is practice only — never advance the SRS stage.
         if (!mistakesMode) void submitCompleted(done);
       }
@@ -182,6 +178,17 @@ export default function ReviewsPage() {
   }, [items, task, input, feedback, advance, submitCompleted, mistakesMode]);
 
   if (!items) return <p className="text-slate-500">Loading reviews…</p>;
+
+  // Each question (meaning / reading / recall) counts as one step of progress.
+  const totalSteps = items.reduce(
+    (n, it) => n + 1 + (it.needsReading ? 1 : 0) + (it.needsRecall ? 1 : 0),
+    0,
+  );
+  const doneSteps = items.reduce(
+    (n, it) =>
+      n + (it.meaningDone ? 1 : 0) + (it.readingDone ? 1 : 0) + (it.recallDone ? 1 : 0),
+    0,
+  );
 
   if (items.length === 0) {
     return (
@@ -198,14 +205,14 @@ export default function ReviewsPage() {
 
   if (!task) {
     const accuracy =
-      completed > 0 ? Math.round((completed / (completed + sessionWrong)) * 100) : 100;
+      totalSteps > 0 ? Math.round((totalSteps / (totalSteps + sessionWrong)) * 100) : 100;
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
         <h1 className="text-2xl font-bold">
           {mistakesMode ? "Extra study complete!" : "Session complete!"}
         </h1>
         <p className="mt-2 text-slate-600">
-          {completed} items {mistakesMode ? "studied" : "reviewed"} · {accuracy}% first-guess
+          {items.length} items {mistakesMode ? "studied" : "reviewed"} · {accuracy}% first-guess
           accuracy
         </p>
         {mistakesMode && (
@@ -235,14 +242,14 @@ export default function ReviewsPage() {
       )}
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
         <span>
-          {completed} / {items.length} done
+          {doneSteps} / {totalSteps} done
         </span>
         <span>{sessionWrong} wrong answers this session</span>
       </div>
       <div className="mb-6 h-2 overflow-hidden rounded-full bg-slate-200">
         <div
           className="h-full bg-green-500 transition-all"
-          style={{ width: `${(completed / items.length) * 100}%` }}
+          style={{ width: `${(doneSteps / totalSteps) * 100}%` }}
         />
       </div>
 
