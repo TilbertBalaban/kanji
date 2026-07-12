@@ -26,12 +26,14 @@ export async function GET() {
 
   // Everything here is independent, so one round of parallel queries covers
   // the whole dashboard (only the mistake-subject lookup chains a second one).
-  const [currentLevel, lessonCount, doneToday, reviewCount, activeItems, mistakeIds, accuracyLogs, upcoming] =
+  const [currentLevel, lessonCount, doneToday, reviewCount, customReviewCount, activeItems, mistakeIds, accuracyLogs, upcoming] =
     await Promise.all([
       getCurrentLevel(userId),
       prisma.assignment.count({ where: { userId, startedAt: null, unlockedAt: { not: null } } }),
       lessonsDoneToday(userId),
       prisma.assignment.count({ where: { userId, availableAt: { lte: now } } }),
+      // Custom vocabulary due — its own SRS, surfaced as a dashboard tile.
+      prisma.customVocab.count({ where: { userId, availableAt: { lte: now } } }),
       // Active Item Spread: active items (Apprentice I → Enlightened, stages
       // 1-8) bucketed by SRS stage and stacked by subject type. Burned items
       // (9) are retired, so they are not part of the "active" spread.
@@ -110,6 +112,7 @@ export async function GET() {
       Math.max(0, DAILY_LESSON_LIMIT - doneToday),
     ),
     reviewCount,
+    customReviewCount,
     forecast,
     spread,
     recentMistakes,

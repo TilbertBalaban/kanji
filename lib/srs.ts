@@ -109,9 +109,10 @@ export interface Reading {
 
 export type AnswerResult = "correct" | "incorrect" | "retry"; // retry = not counted (e.g. wrong reading type)
 
-function normalize(s: string): string {
+export function normalizeAnswer(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
+const normalize = normalizeAnswer;
 
 function levenshtein(a: string, b: string): number {
   const m = a.length;

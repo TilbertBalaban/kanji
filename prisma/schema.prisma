@@ -133,3 +133,27 @@ model UserProgress {
   userId       String @id // "Tilbert" | "Kate" — see lib/users.ts
   currentLevel Int    @default(1)
 }
+
+// A user's own vocabulary (words/phrases not in WaniKani), each row carrying
+// its own SRS state. This is a self-contained parallel system: it shares the
+// stage model and intervals from lib/srs.ts but never touches Assignment,
+// ReviewLog, or the unlock/level-up cascade.
+model CustomVocab {
+  id         Int      @id @default(autoincrement())
+  userId     String
+  characters String // the word/phrase as written, e.g. "はじめまして"
+  meanings   String // JSON [string] — first entry is primary
+  readings   String // JSON [string] — kana; may be empty (meaning-only item)
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  // SRS state — starts at Apprentice I the moment the item is added.
+  srsStage    Int       @default(1)
+  availableAt DateTime? // next review due; null once burned
+  passedAt    DateTime? // first reached Guru
+  burnedAt    DateTime?
+
+  @@unique([userId, characters])
+  @@index([userId, availableAt])
+}

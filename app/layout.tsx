@@ -21,6 +21,7 @@ const NAV = [
   { href: "/lessons", label: "Lessons" },
   { href: "/reviews", label: "Reviews" },
   { href: "/levels", label: "Levels" },
+  { href: "/custom", label: "My Vocab" },
 ];
 
 const TYPE_NAV = [

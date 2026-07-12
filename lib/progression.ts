@@ -148,6 +148,46 @@ export async function completeReview(
 }
 
 /**
+ * Apply a finished review to a custom-vocab item: same stage math as
+ * completeReview, but on the item's embedded SRS state — no review log, no
+ * unlock cascade, no level-up. Rejects items that aren't due, so a replayed
+ * completion can't advance an item twice.
+ */
+export async function completeCustomVocabReview(
+  userId: string,
+  id: number,
+  meaningIncorrectCount: number,
+  readingIncorrectCount: number,
+  recallIncorrectCount: number = 0,
+) {
+  const item = await prisma.customVocab.findUnique({ where: { id } });
+  if (!item || item.userId !== userId) {
+    throw new Error(`No custom vocab item ${id}`);
+  }
+  const now = new Date();
+  if (!item.availableAt || item.availableAt > now) {
+    throw new Error(`Review is not due for custom vocab item ${id}`);
+  }
+
+  const incorrect = meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
+  const startingStage = item.srsStage;
+  const endingStage = nextStage(startingStage, incorrect);
+  const justPassed = endingStage >= GURU_STAGE && !item.passedAt;
+
+  await prisma.customVocab.update({
+    where: { id },
+    data: {
+      srsStage: endingStage,
+      availableAt: nextAvailableAt(endingStage, now),
+      passedAt: justPassed ? now : item.passedAt,
+      burnedAt: endingStage === BURNED_STAGE ? now : null,
+    },
+  });
+
+  return { startingStage, endingStage };
+}
+
+/**
  * Create assignments for the candidates that aren't assigned yet and whose
  * components have all passed (or that always unlock, i.e. radicals). Batched:
  * two reads + one createMany regardless of candidate count.

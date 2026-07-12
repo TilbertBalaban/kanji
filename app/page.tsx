@@ -27,6 +27,7 @@ interface Summary {
   lessonCount: number;
   lessonsAvailableToday: number;
   reviewCount: number;
+  customReviewCount: number;
   forecast: Record<string, number>;
   spread: StageBucket[];
   recentMistakes: Mistake[];
@@ -58,7 +59,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Link
           href="/lessons"
           className="rounded-xl bg-pink-600 p-6 text-white shadow transition-transform hover:scale-[1.02]"
@@ -76,6 +77,13 @@ export default function Dashboard() {
         >
           <div className="text-4xl font-bold">{summary.reviewCount}</div>
           <div className="mt-1 text-sky-100">Reviews due now</div>
+        </Link>
+        <Link
+          href={summary.customReviewCount > 0 ? "/custom/reviews" : "/custom"}
+          className="rounded-xl bg-amber-500 p-6 text-white shadow transition-transform hover:scale-[1.02]"
+        >
+          <div className="text-4xl font-bold">{summary.customReviewCount}</div>
+          <div className="mt-1 text-amber-100">Custom vocab reviews due</div>
         </Link>
       </div>
 

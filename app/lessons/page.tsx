@@ -7,7 +7,8 @@ import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCar
 import { ReadingAudio } from "@/components/ReadingAudio";
 import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
-import { checkMeaning, checkReading, isVocabulary, tasksForSubject } from "@/lib/srs";
+import { evaluateAnswer } from "@/lib/answer-checker";
+import { isVocabulary, tasksForSubject } from "@/lib/srs";
 import type { RelatedSubjectDTO, SubjectDTO } from "@/lib/serialize";
 import { subjectPath } from "@/lib/subject-url";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
@@ -108,6 +109,10 @@ export default function LessonsPage() {
   const [quiz, setQuiz] = useState<QuizTask[]>([]);
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<QuizFeedback>("idle");
+  // WaniKani-style answer-checker messages (see app/reviews/page.tsx).
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const inputCharsRef = useRef("");
   const [doneToday, setDoneToday] = useState(0);
   const [dailyLimit, setDailyLimit] = useState(10);
   const [extraBatchSize, setExtraBatchSize] = useState(5);
@@ -193,6 +198,7 @@ export default function LessonsPage() {
       setQuiz(rest);
       setInput("");
       setFeedback("idle");
+      setInfoMessage(null);
       if (rest.length === 0) void finishBatch();
       return;
     }
@@ -201,25 +207,26 @@ export default function LessonsPage() {
       setQuiz([...quiz.slice(1), task]);
       setInput("");
       setFeedback("idle");
+      setInfoMessage(null);
       return;
     }
 
     // Both "reading" and "recall" are answered with the reading in kana.
-    const result =
-      task.kind === "meaning"
-        ? checkMeaning(
-            input,
-            task.subject.meanings,
-            task.subject.auxMeanings,
-            task.subject.userSynonyms,
-          )
-        : checkReading(input, task.subject.readings);
+    const verdict = evaluateAnswer({
+      questionType: task.kind === "meaning" ? "meaning" : "reading",
+      response: input,
+      inputChars: inputCharsRef.current,
+      subject: task.subject,
+      userSynonyms: task.subject.userSynonyms,
+    });
 
-    if (result === "retry") {
+    if (verdict.action === "retry") {
+      // Shake and keep the hint up until the answer is edited, like WaniKani.
+      setRetryMessage(verdict.message);
       setFeedback("retry");
-      setTimeout(() => setFeedback("idle"), 900);
     } else {
-      setFeedback(result);
+      setInfoMessage(verdict.message);
+      setFeedback(verdict.action === "pass" ? "correct" : "incorrect");
     }
   }, [quiz, input, feedback, finishBatch]);
 
@@ -502,12 +509,25 @@ export default function LessonsPage() {
         subject={task.subject}
         kind={task.kind}
         input={input}
-        onInputChange={setInput}
+        onInputChange={(value, inputChars) => {
+          setInput(value);
+          inputCharsRef.current = inputChars;
+          // Editing the answer dismisses the shake hint, like WaniKani.
+          if (feedback === "retry") {
+            setFeedback("idle");
+            setRetryMessage(null);
+          }
+        }}
         onSubmit={handleQuizSubmit}
         feedback={feedback}
         inputRef={inputRef}
         size="compact"
       />
+      {feedback === "retry" && retryMessage && (
+        <p className="mx-auto mt-3 max-w-md rounded-lg bg-slate-500 px-4 py-2 text-center text-sm text-white shadow">
+          {retryMessage}
+        </p>
+      )}
       {feedback === "incorrect" && (
         <p className="mt-3 text-center text-sm text-red-600">
           Not quite —{" "}
@@ -518,7 +538,10 @@ export default function LessonsPage() {
         </p>
       )}
       {feedback === "correct" && (
-        <p className="mt-3 text-center text-sm text-green-600">Correct! Press Enter.</p>
+        <div className="mt-3 text-center text-sm">
+          <p className="text-green-600">Correct! Press Enter.</p>
+          {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}
+        </div>
       )}
     </div>
   );

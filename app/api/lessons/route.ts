@@ -5,6 +5,7 @@ import {
   EXTRA_LESSON_BATCH,
   lessonsDoneToday,
 } from "@/lib/progression";
+import { relatedAnswersBySubject } from "@/lib/related-answers";
 import { toRelatedSubject, toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
 import { synonymsBySubject } from "@/lib/synonyms";
@@ -72,13 +73,17 @@ export async function GET(req: NextRequest) {
   const relatedIds = [
     ...new Set(dtos.flatMap((d) => [...d.componentIds, ...d.amalgamationIds])),
   ];
-  const relatedSubjects = relatedIds.length
-    ? await prisma.subject.findMany({ where: { id: { in: relatedIds } } })
-    : [];
+  const [relatedSubjects, relatedAnswers] = await Promise.all([
+    relatedIds.length
+      ? prisma.subject.findMany({ where: { id: { in: relatedIds } } })
+      : Promise.resolve([]),
+    relatedAnswersBySubject(batchSubjects),
+  ]);
   const relatedMap = new Map(relatedSubjects.map((r) => [r.id, toRelatedSubject(r)]));
 
   const subjects = dtos.map((d) => ({
     ...d,
+    related: relatedAnswers.get(d.id),
     components: d.componentIds.map((id) => relatedMap.get(id)).filter(Boolean),
     amalgamations: d.amalgamationIds.map((id) => relatedMap.get(id)).filter(Boolean),
   }));

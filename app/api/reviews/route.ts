@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { relatedAnswersBySubject } from "@/lib/related-answers";
 import { toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
 import { synonymsBySubject } from "@/lib/synonyms";
@@ -21,14 +22,18 @@ export async function GET() {
     [assignments[i], assignments[j]] = [assignments[j], assignments[i]];
   }
 
-  const synonyms = await synonymsBySubject(
-    userId,
-    assignments.map((a) => a.subjectId),
-  );
+  const [synonyms, related] = await Promise.all([
+    synonymsBySubject(
+      userId,
+      assignments.map((a) => a.subjectId),
+    ),
+    relatedAnswersBySubject(assignments.map((a) => a.subject)),
+  ]);
 
   return NextResponse.json({
     subjects: assignments.map((a) => ({
       ...toSubjectDTO(a.subject, synonyms.get(a.subjectId) ?? []),
+      related: related.get(a.subjectId),
       srsStage: a.srsStage,
     })),
   });

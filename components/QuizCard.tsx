@@ -1,6 +1,6 @@
 "use client";
 
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import * as wanakana from "wanakana";
 import { AudioButton } from "@/components/AudioButton";
 import { SubjectChar } from "@/components/SubjectChar";
@@ -33,7 +33,9 @@ export function QuizCard({
   subject: QuizSubject;
   kind: TaskKind;
   input: string;
-  onInputChange: (value: string) => void;
+  // inputChars = raw keystrokes before kana conversion, so the answer checker
+  // can spot an English meaning typed into a reading field.
+  onInputChange: (value: string, inputChars: string) => void;
   onSubmit: () => void;
   feedback: QuizFeedback;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -42,6 +44,12 @@ export function QuizCard({
   const isRecall = kind === "recall";
   // Reading and recall are both answered with the reading in kana.
   const wantsKana = kind === "reading" || kind === "recall";
+  // Raw keystrokes typed into a kana field, reconstructed from InputEvent.data
+  // (the field itself only ever holds the converted kana).
+  const inputCharsRef = useRef("");
+  useEffect(() => {
+    if (input === "") inputCharsRef.current = "";
+  }, [input]);
   const color = TYPE_COLORS[subject.type];
   const acceptedMeanings = subject.meanings.filter((m) => m.acceptedAnswer);
   const promptMeaning =
@@ -100,7 +108,17 @@ export function QuizCard({
             value={input}
             onChange={(e) => {
               const raw = e.target.value;
-              onInputChange(wantsKana ? wanakana.toKana(raw, { IMEMode: true }) : raw);
+              if (wantsKana) {
+                const native = e.nativeEvent as InputEvent;
+                if (raw === "") inputCharsRef.current = "";
+                else if (native.inputType?.startsWith("delete"))
+                  inputCharsRef.current = inputCharsRef.current.slice(0, -1);
+                else if (native.data) inputCharsRef.current += native.data;
+                else inputCharsRef.current = raw; // paste/autofill fallback
+                onInputChange(wanakana.toKana(raw, { IMEMode: true }), inputCharsRef.current);
+              } else {
+                onInputChange(raw, raw);
+              }
             }}
             onKeyDown={(e) => e.key === "Enter" && onSubmit()}
             placeholder={wantsKana ? "答え (kana)" : "Your answer (English)"}

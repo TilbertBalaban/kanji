@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recentMistakeSubjectIds } from "@/lib/mistakes";
+import { relatedAnswersBySubject } from "@/lib/related-answers";
 import { toRelatedSubject, toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
 import { synonymsBySubject } from "@/lib/synonyms";
@@ -45,14 +46,20 @@ export async function GET() {
   const relatedIds = [
     ...new Set(dtos.flatMap((d) => [...d.dto.componentIds, ...d.dto.amalgamationIds])),
   ];
-  const relatedSubjects = relatedIds.length
-    ? await prisma.subject.findMany({ where: { id: { in: relatedIds } } })
-    : [];
+  const [relatedSubjects, relatedAnswers] = await Promise.all([
+    relatedIds.length
+      ? prisma.subject.findMany({ where: { id: { in: relatedIds } } })
+      : Promise.resolve([]),
+    relatedAnswersBySubject(
+      dtos.map(({ dto }) => ({ id: dto.id, type: dto.type, characters: dto.characters })),
+    ),
+  ]);
   const relatedMap = new Map(relatedSubjects.map((r) => [r.id, toRelatedSubject(r)]));
 
   const subjects = dtos.map(({ dto, srsStage }) => ({
     ...dto,
     srsStage,
+    related: relatedAnswers.get(dto.id),
     components: dto.componentIds.map((id) => relatedMap.get(id)).filter(Boolean),
     amalgamations: dto.amalgamationIds.map((id) => relatedMap.get(id)).filter(Boolean),
   }));

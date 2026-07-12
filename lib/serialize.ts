@@ -1,4 +1,5 @@
 import type { Subject } from "@prisma/client";
+import type { RelatedAnswers } from "./answer-checker";
 import type { PronunciationAudio } from "./audio";
 import type { AuxMeaning, Meaning, Reading } from "./srs";
 
@@ -24,6 +25,9 @@ export interface SubjectDTO {
   partsOfSpeech: string[];
   audioUrls: PronunciationAudio[];
   userSynonyms: string[]; // per-user extra accepted meanings
+  // Identical-character subjects of other types, for the quiz answer checker's
+  // "Oops, we want the X, not the Y." shakes (see lib/related-answers.ts).
+  related?: RelatedAnswers;
 }
 
 export function toSubjectDTO(s: Subject, userSynonyms: string[] = []): SubjectDTO {

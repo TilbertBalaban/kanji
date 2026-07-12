@@ -1,20 +1,27 @@
 "use client";
 
+// Review session for custom vocabulary. Same quiz mechanics as /reviews
+// (meaning + reading + English→reading recall, shared QuizCard and answer
+// checking), but sourced from the user's own items and completing against the
+// custom-vocab SRS — the WaniKani progression is never touched. Pronunciation
+// comes from browser speech synthesis, since custom words have no audio clips.
+
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MnemonicText } from "@/components/MnemonicText";
-import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
-import { SynonymManager } from "@/components/SynonymManager";
+import { QuizCard, type QuizFeedback, type QuizSubject, type TaskKind } from "@/components/QuizCard";
+import { SpeechButton } from "@/components/SpeechButton";
+import {
+  asMeanings,
+  asReadings,
+  tasksForCustomVocab,
+  type CustomVocabDTO,
+} from "@/lib/custom-vocab";
 import { evaluateAnswer } from "@/lib/answer-checker";
-import { STAGE_NAMES, tasksForSubject } from "@/lib/srs";
-import type { SubjectDTO } from "@/lib/serialize";
-import { subjectPath } from "@/lib/subject-url";
-import { useMistakesMode } from "@/lib/use-mistakes-mode";
-
-type ReviewSubject = SubjectDTO & { srsStage: number };
+import { STAGE_NAMES } from "@/lib/srs";
 
 interface Item {
-  subject: ReviewSubject;
+  vocab: CustomVocabDTO;
+  subject: QuizSubject; // the vocab adapted to what QuizCard/checkers expect
   needsReading: boolean;
   needsRecall: boolean;
   meaningDone: boolean;
@@ -27,7 +34,7 @@ interface Item {
 
 interface Toast {
   text: string;
-  kind: "up" | "down" | "levelup";
+  kind: "up" | "down";
 }
 
 function pickTask(items: Item[]): { index: number; kind: TaskKind } | null {
@@ -41,34 +48,37 @@ function pickTask(items: Item[]): { index: number; kind: TaskKind } | null {
   return open[Math.floor(Math.random() * open.length)];
 }
 
-export default function ReviewsPage() {
+export default function CustomReviewsPage() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [task, setTask] = useState<{ index: number; kind: TaskKind } | null>(null);
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<QuizFeedback>("idle");
-  // WaniKani-style answer-checker messages: the shake hint (shown until the
-  // user edits their answer) and the info line under a graded answer.
+  // WaniKani-style answer-checker messages (see app/reviews/page.tsx).
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const inputCharsRef = useRef("");
-  const [showDetails, setShowDetails] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // "Extra Study" over recent mistakes: same quiz UI, sourced from the mistake
-  // items and — crucially — with no SRS progression on completion.
-  const mistakesMode = useMistakesMode();
-
   useEffect(() => {
-    fetch(mistakesMode ? "/api/recent-mistakes" : "/api/reviews")
+    fetch("/api/custom-vocab/reviews")
       .then((r) => r.json())
-      .then((data: { subjects: ReviewSubject[] }) => {
-        const loaded: Item[] = data.subjects.map((subject) => {
-          const tasks = tasksForSubject(subject);
+      .then((data: { items: CustomVocabDTO[] }) => {
+        const loaded: Item[] = data.items.map((vocab) => {
+          const tasks = tasksForCustomVocab(vocab);
           return {
-            subject,
+            vocab,
+            subject: {
+              id: vocab.id,
+              type: "custom",
+              characters: vocab.characters,
+              characterImage: null,
+              meanings: asMeanings(vocab.meanings),
+              readings: asReadings(vocab.readings),
+              audioUrls: [],
+            },
             needsReading: tasks.reading,
             needsRecall: tasks.recall,
             meaningDone: false,
@@ -82,18 +92,18 @@ export default function ReviewsPage() {
         setItems(loaded);
         setTask(pickTask(loaded));
       });
-  }, [mistakesMode]);
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, [task, feedback]);
 
   const submitCompleted = useCallback(async (item: Item) => {
-    const res = await fetch("/api/reviews/complete", {
+    const res = await fetch("/api/custom-vocab/reviews/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        subjectId: item.subject.id,
+        id: item.vocab.id,
         meaningIncorrectCount: item.meaningWrong,
         readingIncorrectCount: item.readingWrong,
         recallIncorrectCount: item.recallWrong,
@@ -105,9 +115,7 @@ export default function ReviewsPage() {
       return;
     }
     const result = await res.json();
-    if (result.leveledUpTo) {
-      setToast({ text: `Level up! You reached level ${result.leveledUpTo} 🎉`, kind: "levelup" });
-    } else if (result.endingStage > result.startingStage) {
+    if (result.endingStage > result.startingStage) {
       setToast({ text: `↑ ${STAGE_NAMES[result.endingStage]}`, kind: "up" });
     } else {
       setToast({ text: `↓ ${STAGE_NAMES[result.endingStage]}`, kind: "down" });
@@ -121,7 +129,6 @@ export default function ReviewsPage() {
     setInput("");
     setRetryMessage(null);
     setInfoMessage(null);
-    setShowDetails(false);
     setTask(pickTask(items));
   }, [items, task]);
 
@@ -139,8 +146,7 @@ export default function ReviewsPage() {
       questionType: task.kind === "meaning" ? "meaning" : "reading",
       response: input,
       inputChars: inputCharsRef.current,
-      subject: item.subject,
-      userSynonyms: item.subject.userSynonyms,
+      subject: { ...item.subject, auxMeanings: [] },
     });
 
     if (verdict.action === "retry") {
@@ -168,8 +174,7 @@ export default function ReviewsPage() {
         (!done.needsRecall || done.recallDone)
       ) {
         setCompleted((c) => c + 1);
-        // Extra Study is practice only — never advance the SRS stage.
-        if (!mistakesMode) void submitCompleted(done);
+        void submitCompleted(done);
       }
     } else {
       const updated = [...items];
@@ -178,18 +183,16 @@ export default function ReviewsPage() {
       setSessionWrong((w) => w + 1);
       setFeedback("incorrect");
     }
-  }, [items, task, input, feedback, advance, submitCompleted, mistakesMode]);
+  }, [items, task, input, feedback, advance, submitCompleted]);
 
-  if (!items) return <p className="text-slate-500">Loading reviews…</p>;
+  if (!items) return <p className="text-slate-500">Loading custom reviews…</p>;
 
   if (items.length === 0) {
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
-        <p className="text-2xl">
-          {mistakesMode ? "🎉 No recent mistakes to study." : "🎉 No reviews due right now."}
-        </p>
-        <Link href="/" className="mt-4 inline-block text-sky-600 hover:underline">
-          Back to dashboard
+        <p className="text-2xl">🎉 No custom reviews due right now.</p>
+        <Link href="/custom" className="mt-4 inline-block text-sky-600 hover:underline">
+          Back to custom vocabulary
         </Link>
       </div>
     );
@@ -200,21 +203,15 @@ export default function ReviewsPage() {
       completed > 0 ? Math.round((completed / (completed + sessionWrong)) * 100) : 100;
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
-        <h1 className="text-2xl font-bold">
-          {mistakesMode ? "Extra study complete!" : "Session complete!"}
-        </h1>
+        <h1 className="text-2xl font-bold">Session complete!</h1>
         <p className="mt-2 text-slate-600">
-          {completed} items {mistakesMode ? "studied" : "reviewed"} · {accuracy}% first-guess
-          accuracy
+          {completed} items reviewed · {accuracy}% first-guess accuracy
         </p>
-        {mistakesMode && (
-          <p className="mt-1 text-sm text-slate-500">Extra practice only — your SRS was untouched.</p>
-        )}
         <Link
-          href="/"
+          href="/custom"
           className="mt-6 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
         >
-          Back to dashboard
+          Back to custom vocabulary
         </Link>
       </div>
     );
@@ -222,16 +219,11 @@ export default function ReviewsPage() {
 
   const current = items[task.index];
   const subject = current.subject;
-  // Reading and recall are both answered with the reading in kana.
   const wantsKana = task.kind === "reading" || task.kind === "recall";
+  const spokenText = current.vocab.readings[0] ?? current.vocab.characters;
 
   return (
     <div className="mx-auto max-w-2xl">
-      {mistakesMode && (
-        <div className="mb-4 rounded-lg bg-slate-100 px-4 py-2 text-center text-sm text-slate-600">
-          🐢 Extra Study · recent mistakes — answers here don&apos;t affect your SRS.
-        </div>
-      )}
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
         <span>
           {completed} / {items.length} done
@@ -264,6 +256,18 @@ export default function ReviewsPage() {
         size="large"
       />
 
+      {/* Speech-synthesis pronunciation once the answer is revealed (QuizCard
+          only handles WaniKani audio clips, which custom vocab doesn't have). */}
+      {(feedback === "correct" || feedback === "incorrect") && (
+        <div className="mt-4 flex justify-center">
+          <SpeechButton
+            key={`${subject.id}-${task.kind}-${feedback}`}
+            text={spokenText}
+            autoPlay={wantsKana && feedback === "correct"}
+          />
+        </div>
+      )}
+
       {feedback === "retry" && retryMessage && (
         <p className="mx-auto mt-3 max-w-md rounded-lg bg-slate-500 px-4 py-2 text-center text-sm text-white shadow">
           {retryMessage}
@@ -274,97 +278,11 @@ export default function ReviewsPage() {
           <p className="font-medium text-red-700">Incorrect — press Enter to continue.</p>
           <p className="mt-1 text-slate-600">
             {wantsKana
-              ? `Reading: ${subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ")}`
-              : `Meaning: ${subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}`}
+              ? `Reading: ${current.vocab.readings.join("、")}`
+              : `Meaning: ${current.vocab.meanings.join(", ")}`}
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              setShowDetails((s) => !s);
-              // Keep Enter-to-continue working after the click moves focus.
-              inputRef.current?.focus();
-            }}
-            className="mt-1 inline-block text-sky-600 hover:underline"
-          >
-            {showDetails ? "Hide item details" : (infoMessage ?? "View item details")}
-          </button>
-          {showDetails && (
-            <div className="mt-3 space-y-4 border-t border-red-200 pt-3 text-left">
-              <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Meaning
-                </h3>
-                <p className="mb-1 text-base">
-                  {subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}
-                </p>
-                <MnemonicText text={subject.meaningMnemonic} />
-                {subject.meaningHint && (
-                  <p className="mt-1 rounded bg-white/60 p-2 text-slate-500">
-                    Hint: {subject.meaningHint}
-                  </p>
-                )}
-              </div>
-              {subject.readings.some((r) => r.acceptedAnswer) && (
-                <div>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Reading
-                  </h3>
-                  <p className="mb-1 text-base" lang="ja">
-                    {subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join("、")}
-                  </p>
-                  {subject.readingMnemonic && <MnemonicText text={subject.readingMnemonic} />}
-                  {subject.readingHint && (
-                    <p className="mt-1 rounded bg-white/60 p-2 text-slate-500">
-                      Hint: {subject.readingHint}
-                    </p>
-                  )}
-                </div>
-              )}
-              {subject.contextSentences.length > 0 && (
-                <div>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Context sentences
-                  </h3>
-                  {subject.contextSentences.slice(0, 3).map((s, i) => (
-                    <p key={i} className="mb-2">
-                      <span lang="ja" className="text-base">
-                        {s.ja}
-                      </span>
-                      <br />
-                      <span className="text-slate-500">{s.en}</span>
-                    </p>
-                  ))}
-                </div>
-              )}
-              <Link
-                href={subjectPath(subject)}
-                target="_blank"
-                className="inline-block text-sky-600 hover:underline"
-              >
-                Open full details page ↗
-              </Link>
-            </div>
-          )}
-          {task.kind === "meaning" && (
-            <div className="mt-3 border-t border-red-200 pt-3 text-left">
-              <SynonymManager
-                key={subject.id}
-                subjectId={subject.id}
-                initialSynonyms={subject.userSynonyms}
-                onChange={(synonyms) => {
-                  setItems((prev) => {
-                    if (!prev) return prev;
-                    const next = [...prev];
-                    const it = next[task.index];
-                    next[task.index] = {
-                      ...it,
-                      subject: { ...it.subject, userSynonyms: synonyms },
-                    };
-                    return next;
-                  });
-                }}
-              />
-            </div>
+          {current.vocab.notes && (
+            <p className="mt-1 text-slate-500">Note: {current.vocab.notes}</p>
           )}
         </div>
       )}
@@ -378,11 +296,7 @@ export default function ReviewsPage() {
       {toast && (
         <div
           className={`fixed bottom-6 right-6 rounded-lg px-4 py-2 text-white shadow-lg ${
-            toast.kind === "levelup"
-              ? "bg-amber-500"
-              : toast.kind === "up"
-                ? "bg-green-600"
-                : "bg-slate-600"
+            toast.kind === "up" ? "bg-green-600" : "bg-slate-600"
           }`}
         >
           {toast.text}
