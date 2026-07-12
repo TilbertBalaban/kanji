@@ -58,6 +58,10 @@ export function QuizCard({
     .filter((m) => m.meaning !== promptMeaning)
     .map((m) => m.meaning);
 
+  // After a correct kana answer, show the word as it's written (ふとい → 太い).
+  const displayValue =
+    feedback === "correct" && wantsKana && subject.characters ? subject.characters : input;
+
   const feedbackClasses =
     feedback === "correct"
       ? "bg-green-100 border-green-400"
@@ -102,10 +106,10 @@ export function QuizCard({
           <span className="font-bold">{kind === "meaning" ? "Meaning" : "Reading"}</span>
           {isRecall && <span className="text-slate-400"> · from English</span>}
         </div>
-        <div className={`border-t-4 transition-colors ${feedbackClasses}`}>
+        <div className={`relative border-t-4 transition-colors ${feedbackClasses}`}>
           <input
             ref={inputRef}
-            value={input}
+            value={displayValue}
             onChange={(e) => {
               const raw = e.target.value;
               if (wantsKana) {
@@ -129,6 +133,21 @@ export function QuizCard({
             spellCheck={false}
             readOnly={feedback === "correct" || feedback === "incorrect"}
           />
+          {(feedback === "correct" || feedback === "incorrect") && (
+            <button
+              type="button"
+              onClick={onSubmit}
+              aria-label="Next question"
+              title="Next question"
+              className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-2 text-xl leading-none transition-colors ${
+                feedback === "correct"
+                  ? "text-green-600 hover:bg-green-200"
+                  : "text-red-600 hover:bg-red-200"
+              }`}
+            >
+              ❯
+            </button>
+          )}
         </div>
       </div>
 

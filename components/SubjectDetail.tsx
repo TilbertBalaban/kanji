@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ReadingColumns } from "@/components/ItemInfoPanel";
 import { MnemonicText } from "@/components/MnemonicText";
 import { NoteEditor } from "@/components/NoteEditor";
 import { ReadingAudio } from "@/components/ReadingAudio";
@@ -9,7 +10,6 @@ import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
 import { answerCounts, type AccuracyLog } from "@/lib/accuracy";
 import type { SubjectDTO } from "@/lib/serialize";
-import type { Reading } from "@/lib/srs";
 import { STAGE_NAMES } from "@/lib/srs";
 import { subjectPath } from "@/lib/subject-url";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
@@ -42,37 +42,6 @@ interface SubjectDetailData {
     endingStage: number;
   } & AccuracyLog)[];
   related: RelatedSubject[];
-}
-
-// The On'yomi / Kun'yomi / Nanori grid WaniKani shows for kanji. Each column
-// lists that type's readings (or "None"); the primary reading's column is bold.
-function ReadingColumns({ readings }: { readings: Reading[] }) {
-  const primaryType = readings.find((r) => r.primary)?.type;
-  const columns: { key: string; label: string }[] = [
-    { key: "onyomi", label: "On'yomi" },
-    { key: "kunyomi", label: "Kun'yomi" },
-    { key: "nanori", label: "Nanori" },
-  ];
-  return (
-    <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-      {columns.map(({ key, label }) => {
-        const list = readings.filter((r) => r.type === key);
-        const isPrimary = key === primaryType;
-        return (
-          <div key={key}>
-            <div className={`text-sm ${isPrimary ? "font-semibold text-slate-700" : "text-slate-400"}`}>
-              {label}
-            </div>
-            <div className="text-xl" lang="ja">
-              {list.length > 0 ? list.map((r) => r.reading).join("、") : (
-                <span className="text-slate-400">None</span>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function RadicalCombination({ items }: { items: RelatedSubject[] }) {
@@ -308,7 +277,10 @@ export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
             <ReadingColumns readings={subject.readings} />
           ) : subject.audioUrls.length > 0 ? (
             <div className="mb-3">
-              <ReadingAudio audioUrls={subject.audioUrls} />
+              <ReadingAudio
+                audioUrls={subject.audioUrls}
+                readings={acceptedReadings.map((r) => r.reading)}
+              />
             </div>
           ) : (
             <p className="mb-3 text-xl" lang="ja">

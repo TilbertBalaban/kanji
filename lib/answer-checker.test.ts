@@ -314,6 +314,34 @@ describe("evaluateAnswer — info messages", () => {
     });
   });
 
+  it("stays quiet when the only extra reading is a kana variant", () => {
+    const vocab = subject({
+      characters: "ビー玉",
+      meanings: [meaning("Marble", true, true)],
+      readings: [reading("びーだま", { primary: true }), reading("ビーだま")],
+    });
+    expect(evaluateAnswer({ questionType: "reading", response: "びーだま", subject: vocab })).toEqual({
+      action: "pass",
+      message: null,
+    });
+  });
+
+  it("mentions multiple possible readings when they are genuinely distinct", () => {
+    const kanji = subject({
+      type: "kanji",
+      characters: "人",
+      meanings: [meaning("Person", true, true)],
+      readings: [
+        reading("にん", { primary: true, type: "onyomi" }),
+        reading("じん", { type: "onyomi" }),
+      ],
+    });
+    expect(evaluateAnswer({ questionType: "reading", response: "にん", subject: kanji })).toEqual({
+      action: "pass",
+      message: "Did you know this item has multiple possible readings?",
+    });
+  });
+
   it("stays quiet on an exact single-answer match", () => {
     const vocab = subject({
       meanings: [meaning("Inside", true, true)],

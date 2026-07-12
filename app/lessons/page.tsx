@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ItemInfoPanel } from "@/components/ItemInfoPanel";
 import { MnemonicText } from "@/components/MnemonicText";
 import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
 import { ReadingAudio } from "@/components/ReadingAudio";
@@ -112,6 +113,8 @@ export default function LessonsPage() {
   // WaniKani-style answer-checker messages (see app/reviews/page.tsx).
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  // Collapsed by default in the lesson quiz — the item was just studied.
+  const [showItemInfo, setShowItemInfo] = useState(false);
   const inputCharsRef = useRef("");
   const [doneToday, setDoneToday] = useState(0);
   const [dailyLimit, setDailyLimit] = useState(10);
@@ -199,6 +202,7 @@ export default function LessonsPage() {
       setInput("");
       setFeedback("idle");
       setInfoMessage(null);
+      setShowItemInfo(false);
       if (rest.length === 0) void finishBatch();
       return;
     }
@@ -208,6 +212,7 @@ export default function LessonsPage() {
       setInput("");
       setFeedback("idle");
       setInfoMessage(null);
+      setShowItemInfo(false);
       return;
     }
 
@@ -420,7 +425,10 @@ export default function LessonsPage() {
                 </h2>
                 {subject.audioUrls.length > 0 ? (
                   <div className="mb-1">
-                    <ReadingAudio audioUrls={subject.audioUrls} />
+                    <ReadingAudio
+                      audioUrls={subject.audioUrls}
+                      readings={acceptedReadings.map((r) => r.reading)}
+                    />
                   </div>
                 ) : (
                   <p className="text-xl font-medium" lang="ja">
@@ -541,6 +549,26 @@ export default function LessonsPage() {
         <div className="mt-3 text-center text-sm">
           <p className="text-green-600">Correct! Press Enter.</p>
           {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}
+        </div>
+      )}
+      {(feedback === "correct" || feedback === "incorrect") && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => {
+              setShowItemInfo((s) => !s);
+              // Keep Enter-to-continue working after the click moves focus.
+              inputRef.current?.focus();
+            }}
+            className="mx-auto block text-sm text-sky-600 hover:underline"
+          >
+            {showItemInfo ? "Hide item info" : "Show item info"}
+          </button>
+          {showItemInfo && (
+            <div className="mt-2">
+              <ItemInfoPanel subject={task.subject} />
+            </div>
+          )}
         </div>
       )}
     </div>

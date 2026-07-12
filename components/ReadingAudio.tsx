@@ -74,8 +74,21 @@ function SpeakerButton({ speaker }: { speaker: Speaker }) {
   );
 }
 
-export function ReadingAudio({ audioUrls }: { audioUrls: PronunciationAudio[] }) {
-  const groups = groupByReading(audioUrls);
+export function ReadingAudio({
+  audioUrls,
+  readings = [],
+}: {
+  audioUrls: PronunciationAudio[];
+  /** Accepted readings to list even when they have no audio clip (e.g. the ビーだま kana variant of びーだま). */
+  readings?: string[];
+}) {
+  const audioGroups = groupByReading(audioUrls);
+  const groups = [
+    ...readings.map(
+      (reading) => audioGroups.find((g) => g.reading === reading) ?? { reading, speakers: [] },
+    ),
+    ...audioGroups.filter((g) => !readings.includes(g.reading)),
+  ];
   if (groups.length === 0) return null;
   return (
     <div className="space-y-4">

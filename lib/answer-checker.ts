@@ -570,8 +570,11 @@ function itemInfoMessage({
   if (!passed) {
     return `Need help? View the correct ${questionType} and mnemonic.`;
   }
+  // Kana-variant duplicates (びーだま/ビーだま) are one reading, not two.
   const multipleAnswers =
-    (questionType === "meaning" ? visibleMeanings(subject) : visibleReadings(subject)).length > 1;
+    questionType === "meaning"
+      ? visibleMeanings(subject).length > 1
+      : new Set(visibleReadings(subject).map(toHiragana)).size > 1;
   if (accurate && multipleAnswers) {
     return `Did you know this item has multiple possible ${questionType}s?`;
   }

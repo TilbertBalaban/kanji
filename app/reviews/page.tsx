@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MnemonicText } from "@/components/MnemonicText";
+import { ItemInfoPanel } from "@/components/ItemInfoPanel";
 import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
 import { SynonymManager } from "@/components/SynonymManager";
 import { evaluateAnswer } from "@/lib/answer-checker";
 import { STAGE_NAMES, tasksForSubject } from "@/lib/srs";
 import type { SubjectDTO } from "@/lib/serialize";
-import { subjectPath } from "@/lib/subject-url";
 import { useMistakesMode } from "@/lib/use-mistakes-mode";
 
 type ReviewSubject = SubjectDTO & { srsStage: number };
@@ -150,6 +149,8 @@ export default function ReviewsPage() {
       return;
     }
     setInfoMessage(verdict.message);
+    // The answer is graded — open the full item info, like WaniKani's panel.
+    setShowDetails(true);
 
     const doneKey =
       task.kind === "meaning" ? "meaningDone" : task.kind === "reading" ? "readingDone" : "recallDone";
@@ -277,74 +278,7 @@ export default function ReviewsPage() {
               ? `Reading: ${subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ")}`
               : `Meaning: ${subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}`}
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              setShowDetails((s) => !s);
-              // Keep Enter-to-continue working after the click moves focus.
-              inputRef.current?.focus();
-            }}
-            className="mt-1 inline-block text-sky-600 hover:underline"
-          >
-            {showDetails ? "Hide item details" : (infoMessage ?? "View item details")}
-          </button>
-          {showDetails && (
-            <div className="mt-3 space-y-4 border-t border-red-200 pt-3 text-left">
-              <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Meaning
-                </h3>
-                <p className="mb-1 text-base">
-                  {subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}
-                </p>
-                <MnemonicText text={subject.meaningMnemonic} />
-                {subject.meaningHint && (
-                  <p className="mt-1 rounded bg-white/60 p-2 text-slate-500">
-                    Hint: {subject.meaningHint}
-                  </p>
-                )}
-              </div>
-              {subject.readings.some((r) => r.acceptedAnswer) && (
-                <div>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Reading
-                  </h3>
-                  <p className="mb-1 text-base" lang="ja">
-                    {subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join("、")}
-                  </p>
-                  {subject.readingMnemonic && <MnemonicText text={subject.readingMnemonic} />}
-                  {subject.readingHint && (
-                    <p className="mt-1 rounded bg-white/60 p-2 text-slate-500">
-                      Hint: {subject.readingHint}
-                    </p>
-                  )}
-                </div>
-              )}
-              {subject.contextSentences.length > 0 && (
-                <div>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Context sentences
-                  </h3>
-                  {subject.contextSentences.slice(0, 3).map((s, i) => (
-                    <p key={i} className="mb-2">
-                      <span lang="ja" className="text-base">
-                        {s.ja}
-                      </span>
-                      <br />
-                      <span className="text-slate-500">{s.en}</span>
-                    </p>
-                  ))}
-                </div>
-              )}
-              <Link
-                href={subjectPath(subject)}
-                target="_blank"
-                className="inline-block text-sky-600 hover:underline"
-              >
-                Open full details page ↗
-              </Link>
-            </div>
-          )}
+          {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}
           {task.kind === "meaning" && (
             <div className="mt-3 border-t border-red-200 pt-3 text-left">
               <SynonymManager
@@ -372,6 +306,26 @@ export default function ReviewsPage() {
         <div className="mt-3 text-center text-sm">
           <p className="text-green-600">Correct! Press Enter to continue.</p>
           {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}
+        </div>
+      )}
+      {(feedback === "correct" || feedback === "incorrect") && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => {
+              setShowDetails((s) => !s);
+              // Keep Enter-to-continue working after the click moves focus.
+              inputRef.current?.focus();
+            }}
+            className="mx-auto block text-sm text-sky-600 hover:underline"
+          >
+            {showDetails ? "Hide item info" : "Show item info"}
+          </button>
+          {showDetails && (
+            <div className="mt-2">
+              <ItemInfoPanel subject={subject} />
+            </div>
+          )}
         </div>
       )}
 

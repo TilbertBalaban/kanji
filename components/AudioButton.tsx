@@ -26,7 +26,10 @@ export function AudioButton({
     if (!url) return;
     audioRef.current?.pause();
     audioRef.current = new Audio(url);
-    void audioRef.current.play();
+    // Swallow the rejection: pause() during a pending play (rapid replay, or
+    // StrictMode's double mount effect) aborts it, and autoplay may be blocked
+    // before the first user gesture. Neither is actionable.
+    audioRef.current.play().catch(() => {});
   };
 
   useEffect(() => {
