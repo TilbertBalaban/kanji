@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MnemonicText } from "@/components/MnemonicText";
+import { MnemonicText, renderMarkup } from "@/components/MnemonicText";
 import { ReadingAudio } from "@/components/ReadingAudio";
 import { SubjectChar } from "@/components/SubjectChar";
 import type { SubjectDTO } from "@/lib/serialize";
@@ -93,9 +93,9 @@ export function ItemInfoPanel({ subject }: { subject: SubjectDTO }) {
         )}
         <MnemonicText text={subject.meaningMnemonic} />
         {subject.meaningHint && (
-          <p className="mt-2 rounded bg-slate-50 p-2 text-slate-500">
-            Hint: {subject.meaningHint}
-          </p>
+          <div className="mt-2 rounded bg-slate-50 p-2 text-slate-500">
+            <MnemonicText text={`Hint: ${subject.meaningHint}`} className="whitespace-pre-line leading-relaxed" />
+          </div>
         )}
       </div>
 
@@ -120,9 +120,9 @@ export function ItemInfoPanel({ subject }: { subject: SubjectDTO }) {
           )}
           {subject.readingMnemonic && <MnemonicText text={subject.readingMnemonic} />}
           {subject.readingHint && (
-            <p className="mt-2 rounded bg-slate-50 p-2 text-slate-500">
-              Hint: {subject.readingHint}
-            </p>
+            <div className="mt-2 rounded bg-slate-50 p-2 text-slate-500">
+              <MnemonicText text={`Hint: ${subject.readingHint}`} className="whitespace-pre-line leading-relaxed" />
+            </div>
           )}
         </div>
       )}
@@ -147,7 +147,7 @@ export function ItemInfoPanel({ subject }: { subject: SubjectDTO }) {
                 {s.ja}
               </span>
               <br />
-              <span className="text-slate-500">{s.en}</span>
+              <span className="text-slate-500">{renderMarkup(s.en)}</span>
             </p>
           ))}
         </div>

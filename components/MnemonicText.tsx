@@ -1,5 +1,6 @@
-// Renders mnemonic text containing WaniKani-style markup tags
-// (<radical>, <kanji>, <vocabulary>, <reading>, <ja>) as highlighted spans.
+// Renders mnemonic/hint text containing WaniKani-style markup tags
+// (<radical>, <kanji>, <vocabulary>, <reading>, <ja>, <em>) as styled spans
+// instead of showing the raw tags.
 
 const TAG_STYLES: Record<string, string> = {
   radical: "bg-sky-100 text-sky-800",
@@ -9,9 +10,11 @@ const TAG_STYLES: Record<string, string> = {
   ja: "font-medium",
 };
 
-const TAG_RE = /<(radical|kanji|vocabulary|reading|ja)>([\s\S]*?)<\/\1>/g;
+const TAG_RE = /<(radical|kanji|vocabulary|reading|ja|em)>([\s\S]*?)<\/\1>/g;
 
-export function MnemonicText({ text }: { text: string }) {
+// Parses WaniKani markup tags out of `text` into styled React nodes, without
+// wrapping them in a block element — for embedding inline (e.g. in a <span>).
+export function renderMarkup(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -22,14 +25,20 @@ export function MnemonicText({ text }: { text: string }) {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
+    const tag = match[1];
+    const Wrapper = tag === "em" ? "em" : "span";
     parts.push(
-      <span key={key++} className={`rounded px-1 ${TAG_STYLES[match[1]] ?? ""}`}>
+      <Wrapper key={key++} className={tag === "em" ? "italic" : `rounded px-1 ${TAG_STYLES[tag] ?? ""}`}>
         {match[2]}
-      </span>,
+      </Wrapper>,
     );
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
 
-  return <p className="whitespace-pre-line leading-relaxed">{parts}</p>;
+  return parts;
+}
+
+export function MnemonicText({ text, className }: { text: string; className?: string }) {
+  return <p className={className ?? "whitespace-pre-line leading-relaxed"}>{renderMarkup(text)}</p>;
 }
