@@ -42,6 +42,13 @@ export interface RelatedAnswers {
   kanjiMeanings?: string[];
   kanjiReadings?: string[];
   vocabularyMeanings?: string[];
+  /**
+   * Other vocabulary sharing an accepted meaning with this subject
+   * (父 ↔ お父さん ↔ 父親 for "father"), for the recall shake — on an
+   * English → reading prompt, the reading of a different word with the same
+   * meaning is a fair guess, not a mistake.
+   */
+  sameMeaningVocab?: { characters: string; readings: string[] }[];
 }
 
 export interface CheckableSubject {
@@ -55,6 +62,8 @@ export interface CheckableSubject {
 
 export interface AnswerCheckArgs {
   questionType: QuestionType; // recall prompts check as "reading"
+  /** True for recall prompts (English → reading), which check as "reading". */
+  recall?: boolean;
   /** What is in the input field (kana for reading questions). */
   response: string;
   /** Raw keystrokes before kana conversion (reading questions only). */
@@ -165,7 +174,31 @@ function checkWarningList({ questionType, response, subject }: PluginArgs): Plug
   return null;
 }
 
-// 4. Right answer, wrong field: reading typed into meaning or vice versa.
+// 4. Recall (English → reading) answered with a *different* word that shares
+// the meaning (prompt "father", card お父さん, answer ちち) — a fair guess,
+// so shake it back instead of failing.
+function checkSameMeaningVocab({
+  questionType,
+  recall,
+  response,
+  subject,
+  passed,
+}: PluginArgs): PluginResult {
+  if (passed || !recall || questionType !== "reading") return null;
+  const guess = toHiragana(response.trim());
+  const match = subject.related?.sameMeaningVocab?.find((v) =>
+    v.readings.some((r) => toHiragana(r) === guess),
+  );
+  if (match) {
+    return {
+      action: "retry",
+      message: `Oops, that’s ${match.characters} — a different word with the same meaning.`,
+    };
+  }
+  return null;
+}
+
+// 5. Right answer, wrong field: reading typed into meaning or vice versa.
 const missingNRegEx = /[^n]n$/g;
 const addMissingNs = (response: string) =>
   response.replaceAll(missingNRegEx, (match) => match.replace("n", "nn"));
@@ -201,7 +234,7 @@ function checkTransliterated({
   return null;
 }
 
-// 5. Answered with the identical-character subject of another type.
+// 6. Answered with the identical-character subject of another type.
 function checkRelatedMeaningsAndReadings({
   questionType,
   response,
@@ -237,7 +270,7 @@ function checkRelatedMeaningsAndReadings({
   return null;
 }
 
-// 6. Typed the prompt's own characters back — silent shake.
+// 7. Typed the prompt's own characters back — silent shake.
 function checkKanji({ response, subject }: PluginArgs): PluginResult {
   if (subject.characters !== null && subject.characters === response) {
     return { action: "retry", message: null };
@@ -245,7 +278,7 @@ function checkKanji({ response, subject }: PluginArgs): PluginResult {
   return null;
 }
 
-// 7. Long katakana vowel mark ー typed as the vowel it sounds like.
+// 8. Long katakana vowel mark ー typed as the vowel it sounds like.
 const soundAlikes: Record<string, string> = { お: "う", う: "お", え: "い" };
 
 function getEndingVowel(mora: string): string {
@@ -285,7 +318,7 @@ function checkLongDash({ questionType, response, subject }: PluginArgs): PluginR
   return null;
 }
 
-// 8. Verb meaning given without its "to " — bounce with the full form.
+// 9. Verb meaning given without its "to " — bounce with the full form.
 function checkThatVerbStartsWithTo({
   questionType,
   response,
@@ -313,7 +346,7 @@ function checkThatVerbStartsWithTo({
   return null;
 }
 
-// 9. Big kana typed where a small ゃゅょ was expected.
+// 10. Big kana typed where a small ゃゅょ was expected.
 const smallPairs: Record<string, string> = {
   ゃ: "や",
   ゅ: "ゆ",
@@ -358,7 +391,7 @@ function checkSmallHiragana({ questionType, response, subject }: PluginArgs): Pl
   return null;
 }
 
-// 10. ん typo detection — a single "n" where "nn" was needed, or one too many.
+// 11. ん typo detection — a single "n" where "nn" was needed, or one too many.
 const customRomajiMapping = { ぢ: "di", づ: "du", ぢゃ: "dya", ぢゅ: "dyu", ぢょ: "dyo", ふ: "hu" };
 const toRomajiCustom = (kana: string) => toRomaji(kana, { customRomajiMapping });
 
@@ -458,7 +491,7 @@ function checkN({ questionType, response, subject }: PluginArgs): PluginResult {
   return null;
 }
 
-// 11. Kanji meaning given with a "to " prefix it can't have.
+// 12. Kanji meaning given with a "to " prefix it can't have.
 function checkKanjiDoesNotStartWithTo({
   questionType,
   response,
@@ -479,6 +512,7 @@ const PLUGINS = [
   checkImpossibleKana,
   checkKanjiReadings,
   checkWarningList,
+  checkSameMeaningVocab,
   checkTransliterated,
   checkRelatedMeaningsAndReadings,
   checkKanji,
@@ -493,6 +527,7 @@ const PLUGINS = [
 
 export function evaluateAnswer({
   questionType,
+  recall = false,
   response,
   inputChars,
   subject,
@@ -540,7 +575,7 @@ export function evaluateAnswer({
   const passed = result === "correct";
 
   if (!accurate && !blocked) {
-    const args: PluginArgs = { questionType, response: trimmed, inputChars, subject, userSynonyms, passed };
+    const args: PluginArgs = { questionType, recall, response: trimmed, inputChars, subject, userSynonyms, passed };
     for (const plugin of PLUGINS) {
       const verdict = plugin(args);
       if (verdict) return verdict;

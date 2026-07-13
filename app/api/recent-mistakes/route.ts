@@ -51,7 +51,12 @@ export async function GET() {
       ? prisma.subject.findMany({ where: { id: { in: relatedIds } } })
       : Promise.resolve([]),
     relatedAnswersBySubject(
-      dtos.map(({ dto }) => ({ id: dto.id, type: dto.type, characters: dto.characters })),
+      dtos.map(({ dto }) => ({
+        id: dto.id,
+        type: dto.type,
+        characters: dto.characters,
+        meanings: dto.meanings,
+      })),
     ),
   ]);
   const relatedMap = new Map(relatedSubjects.map((r) => [r.id, toRelatedSubject(r)]));

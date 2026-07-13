@@ -135,6 +135,7 @@ export default function ReviewsPage() {
     // Both "reading" and "recall" are answered with the reading in kana.
     const verdict = evaluateAnswer({
       questionType: task.kind === "meaning" ? "meaning" : "reading",
+      recall: task.kind === "recall",
       response: input,
       inputChars: inputCharsRef.current,
       subject: item.subject,

@@ -199,6 +199,55 @@ describe("evaluateAnswer — reading shakes", () => {
   });
 });
 
+describe("evaluateAnswer — recall shakes", () => {
+  const vocab = subject({
+    characters: "お父さん",
+    meanings: [meaning("Father", true, true)],
+    readings: [reading("おとうさん", { accepted: true, primary: true })],
+    related: { sameMeaningVocab: [{ characters: "父", readings: ["ちち"] }] },
+  });
+
+  it("bounces the reading of a different word with the same meaning", () => {
+    const verdict = evaluateAnswer({
+      questionType: "reading",
+      recall: true,
+      response: "ちち",
+      subject: vocab,
+    });
+    expect(verdict).toEqual({
+      action: "retry",
+      message: "Oops, that’s 父 — a different word with the same meaning.",
+    });
+  });
+
+  it("matches the variant reading typed in katakana", () => {
+    expect(
+      evaluateAnswer({ questionType: "reading", recall: true, response: "チチ", subject: vocab })
+        .action,
+    ).toBe("retry");
+  });
+
+  it("still fails that answer on a plain reading question", () => {
+    expect(
+      evaluateAnswer({ questionType: "reading", response: "ちち", subject: vocab }).action,
+    ).toBe("fail");
+  });
+
+  it("passes the reading the card actually asks for", () => {
+    expect(
+      evaluateAnswer({ questionType: "reading", recall: true, response: "おとうさん", subject: vocab })
+        .action,
+    ).toBe("pass");
+  });
+
+  it("fails an unrelated wrong reading on recall", () => {
+    expect(
+      evaluateAnswer({ questionType: "reading", recall: true, response: "はは", subject: vocab })
+        .action,
+    ).toBe("fail");
+  });
+});
+
 describe("evaluateAnswer — meaning shakes", () => {
   const vocab = subject({
     characters: "車",

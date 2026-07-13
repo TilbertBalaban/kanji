@@ -16,12 +16,17 @@ import {
   tasksForCustomVocab,
   type CustomVocabDTO,
 } from "@/lib/custom-vocab";
-import { evaluateAnswer } from "@/lib/answer-checker";
+import { evaluateAnswer, type RelatedAnswers } from "@/lib/answer-checker";
 import { STAGE_NAMES } from "@/lib/srs";
 
+// The reviews API ships each due item with the user's other same-meaning
+// words, for the recall right-word-wrong-card shake.
+type ReviewVocabDTO = CustomVocabDTO & { related?: RelatedAnswers };
+
 interface Item {
-  vocab: CustomVocabDTO;
-  subject: QuizSubject; // the vocab adapted to what QuizCard/checkers expect
+  vocab: ReviewVocabDTO;
+  // the vocab adapted to what QuizCard/checkers expect
+  subject: QuizSubject & { related?: RelatedAnswers };
   needsReading: boolean;
   needsRecall: boolean;
   meaningDone: boolean;
@@ -65,7 +70,7 @@ export default function CustomReviewsPage() {
   useEffect(() => {
     fetch("/api/custom-vocab/reviews")
       .then((r) => r.json())
-      .then((data: { items: CustomVocabDTO[] }) => {
+      .then((data: { items: ReviewVocabDTO[] }) => {
         const loaded: Item[] = data.items.map((vocab) => {
           const tasks = tasksForCustomVocab(vocab);
           return {
@@ -79,6 +84,7 @@ export default function CustomReviewsPage() {
               readings: asReadings(vocab.readings),
               audioUrls: [],
               userSynonyms: [],
+              related: vocab.related,
             },
             needsReading: tasks.reading,
             needsRecall: tasks.recall,
@@ -145,6 +151,7 @@ export default function CustomReviewsPage() {
     // Both "reading" and "recall" are answered with the reading in kana.
     const verdict = evaluateAnswer({
       questionType: task.kind === "meaning" ? "meaning" : "reading",
+      recall: task.kind === "recall",
       response: input,
       inputChars: inputCharsRef.current,
       subject: { ...item.subject, auxMeanings: [] },

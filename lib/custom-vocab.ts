@@ -3,7 +3,7 @@
 // import from client components; the DB writes live in lib/progression.ts.
 
 import type { CustomVocab } from "@prisma/client";
-import type { Meaning, Reading } from "./srs";
+import { normalizeAnswer, type Meaning, type Reading } from "./srs";
 
 export interface CustomVocabDTO {
   id: number;
@@ -27,6 +27,32 @@ export function toCustomVocabDTO(v: CustomVocab): CustomVocabDTO {
     availableAt: v.availableAt?.toISOString() ?? null,
     createdAt: v.createdAt.toISOString(),
   };
+}
+
+/**
+ * For each item, the *other* items sharing a meaning — the recall answer
+ * checker's sameMeaningVocab shake (see lib/answer-checker.ts), so answering
+ * an English prompt with a different word for the same meaning bounces
+ * instead of failing. Compare across the user's whole collection, not just
+ * the due batch.
+ */
+export function sameMeaningCustomVocab(
+  items: Pick<CustomVocabDTO, "id" | "characters" | "meanings" | "readings">[],
+): Map<number, { characters: string; readings: string[] }[]> {
+  const result = new Map<number, { characters: string; readings: string[] }[]>();
+  for (const item of items) {
+    const own = new Set(item.meanings.map(normalizeAnswer));
+    const variants = items
+      .filter(
+        (other) =>
+          other.id !== item.id &&
+          other.readings.length > 0 &&
+          other.meanings.some((m) => own.has(normalizeAnswer(m))),
+      )
+      .map((other) => ({ characters: other.characters, readings: other.readings }));
+    if (variants.length > 0) result.set(item.id, variants);
+  }
+  return result;
 }
 
 /** Which prompts a custom-vocab review asks: meaning always; reading and
