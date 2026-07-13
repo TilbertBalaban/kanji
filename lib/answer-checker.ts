@@ -5,7 +5,9 @@
 // info messages shown after an answer is graded.
 //
 // Message texts are verbatim from WaniKani, except the wrong-reading-type one,
-// which says "We're looking for…" instead of "WaniKani is looking for…".
+// which says "We're looking for…" instead of "WaniKani is looking for…", and the
+// "multiple possible meanings/readings" one, which also lists the alternates so
+// they're visible without opening the item info panel.
 
 import { toHiragana as wkToHiragana, toRomaji, stripOkurigana } from "wanakana";
 import {
@@ -588,7 +590,10 @@ export function evaluateAnswer({
   }
 
   const action: AnswerAction = passed ? "pass" : "fail";
-  return { action, message: itemInfoMessage({ questionType, accurate, passed, subject }) };
+  return {
+    action,
+    message: itemInfoMessage({ questionType, accurate, passed, subject, response: trimmed }),
+  };
 }
 
 function itemInfoMessage({
@@ -596,11 +601,13 @@ function itemInfoMessage({
   accurate,
   passed,
   subject,
+  response,
 }: {
   questionType: QuestionType;
   accurate: boolean;
   passed: boolean;
   subject: CheckableSubject;
+  response: string;
 }): string | null {
   if (!passed) {
     return `Need help? View the correct ${questionType} and mnemonic.`;
@@ -611,7 +618,19 @@ function itemInfoMessage({
       ? visibleMeanings(subject).length > 1
       : new Set(visibleReadings(subject).map(toHiragana)).size > 1;
   if (accurate && multipleAnswers) {
-    return `Did you know this item has multiple possible ${questionType}s?`;
+    const question = `Did you know this item has multiple possible ${questionType}s?`;
+    const others =
+      questionType === "meaning"
+        ? visibleMeanings(subject).filter(
+            (m) => normalizeAnswer(m) !== normalizeAnswer(response),
+          )
+        : [
+            ...new Map(visibleReadings(subject).map((r) => [toHiragana(r), r])).values(),
+          ].filter((r) => toHiragana(r) !== toHiragana(response));
+    if (others.length === 0) return question;
+    return questionType === "meaning"
+      ? `${question} It also means: ${others.join(", ")}.`
+      : `${question} It can also be read: ${others.join(", ")}.`;
   }
   if (!accurate) {
     return `Your answer was a bit off. Check the ${questionType} to make sure you are correct.`;

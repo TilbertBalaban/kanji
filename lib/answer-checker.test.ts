@@ -348,7 +348,24 @@ describe("evaluateAnswer — info messages", () => {
     const verdict = evaluateAnswer({ questionType: "meaning", response: "within", subject: vocab });
     expect(verdict).toEqual({
       action: "pass",
-      message: "Did you know this item has multiple possible meanings?",
+      message: "Did you know this item has multiple possible meanings? It also means: Inside.",
+    });
+  });
+
+  it("lists all meanings when the match was a user synonym", () => {
+    const vocab = subject({
+      meanings: [meaning("Inside", true, true), meaning("Within")],
+    });
+    const verdict = evaluateAnswer({
+      questionType: "meaning",
+      response: "innards",
+      subject: vocab,
+      userSynonyms: ["innards"],
+    });
+    expect(verdict).toEqual({
+      action: "pass",
+      message:
+        "Did you know this item has multiple possible meanings? It also means: Inside, Within.",
     });
   });
 
@@ -387,7 +404,7 @@ describe("evaluateAnswer — info messages", () => {
     });
     expect(evaluateAnswer({ questionType: "reading", response: "にん", subject: kanji })).toEqual({
       action: "pass",
-      message: "Did you know this item has multiple possible readings?",
+      message: "Did you know this item has multiple possible readings? It can also be read: じん.",
     });
   });
 
