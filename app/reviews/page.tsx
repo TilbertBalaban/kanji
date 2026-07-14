@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ItemInfoPanel } from "@/components/ItemInfoPanel";
 import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
 import { SynonymManager } from "@/components/SynonymManager";
@@ -40,7 +40,17 @@ function pickTask(items: Item[]): { index: number; kind: TaskKind } | null {
   return open[Math.floor(Math.random() * open.length)];
 }
 
+// useMistakesMode reads the URL via useSearchParams, which requires a
+// Suspense boundary on a prerendered page (build error without one).
 export default function ReviewsPage() {
+  return (
+    <Suspense fallback={<p className="text-slate-500">Loading reviews…</p>}>
+      <ReviewsSession />
+    </Suspense>
+  );
+}
+
+function ReviewsSession() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [task, setTask] = useState<{ index: number; kind: TaskKind } | null>(null);
   const [input, setInput] = useState("");

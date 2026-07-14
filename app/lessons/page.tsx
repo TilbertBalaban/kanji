@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ItemInfoPanel } from "@/components/ItemInfoPanel";
 import { MnemonicText } from "@/components/MnemonicText";
 import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
@@ -101,7 +101,17 @@ function RelatedGrid({ items }: { items: RelatedSubjectDTO[] }) {
   );
 }
 
+// useMistakesMode reads the URL via useSearchParams, which requires a
+// Suspense boundary on a prerendered page (build error without one).
 export default function LessonsPage() {
+  return (
+    <Suspense fallback={<p className="text-slate-500">Loading…</p>}>
+      <LessonsSession />
+    </Suspense>
+  );
+}
+
+function LessonsSession() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [subjects, setSubjects] = useState<LessonSubject[]>([]);
   const [totalAvailable, setTotalAvailable] = useState(0);
