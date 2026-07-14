@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkMeaning,
   checkReading,
+  inactivityShiftMs,
   nextAvailableAt,
   nextStage,
   type AuxMeaning,
@@ -51,6 +52,24 @@ describe("nextAvailableAt", () => {
 
   it("returns null for burned items", () => {
     expect(nextAvailableAt(9, t0)).toBeNull();
+  });
+});
+
+describe("inactivityShiftMs", () => {
+  const day = 24 * 3600_000;
+  const t0 = new Date("2026-01-01T00:00:00Z");
+  const at = (ms: number) => new Date(t0.getTime() + ms);
+
+  it("returns null within the 2-day window", () => {
+    expect(inactivityShiftMs(t0, t0)).toBeNull();
+    expect(inactivityShiftMs(t0, at(day))).toBeNull();
+    expect(inactivityShiftMs(t0, at(2 * day))).toBeNull();
+  });
+
+  it("shifts by the time missed beyond the window", () => {
+    expect(inactivityShiftMs(t0, at(2 * day + 1))).toBe(1);
+    expect(inactivityShiftMs(t0, at(5 * day))).toBe(3 * day);
+    expect(inactivityShiftMs(t0, at(30 * day))).toBe(28 * day);
   });
 });
 

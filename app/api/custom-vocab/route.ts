@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseCustomVocabInput, toCustomVocabDTO } from "@/lib/custom-vocab";
 import { prisma } from "@/lib/db";
+import { reviewsDueBefore } from "@/lib/progression";
 import { nextAvailableAt } from "@/lib/srs";
 import { requireUserId } from "@/lib/user";
 
@@ -12,10 +13,10 @@ export async function GET() {
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const now = new Date();
+  const dueBefore = await reviewsDueBefore(userId);
   const [items, dueCount] = await Promise.all([
     prisma.customVocab.findMany({ where: { userId }, orderBy: { createdAt: "desc" } }),
-    prisma.customVocab.count({ where: { userId, availableAt: { lte: now } } }),
+    prisma.customVocab.count({ where: { userId, availableAt: { lte: dueBefore } } }),
   ]);
 
   return NextResponse.json({ items: items.map(toCustomVocabDTO), dueCount });

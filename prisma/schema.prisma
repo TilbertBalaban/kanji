@@ -130,8 +130,11 @@ model ReviewStatSnapshot {
 }
 
 model UserProgress {
-  userId       String @id // "Tilbert" | "Kate" — see lib/users.ts
-  currentLevel Int    @default(1)
+  userId         String   @id // "Tilbert" | "Kate" — see lib/users.ts
+  currentLevel   Int      @default(1)
+  // Last completed lesson batch or review — reads never touch this. Reviews
+  // stop accumulating INACTIVITY_PAUSE_DAYS after it — see lib/progression.ts.
+  lastActivityAt DateTime @default(now())
 }
 
 // A user's own vocabulary (words/phrases not in WaniKani), each row carrying

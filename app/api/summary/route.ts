@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { reviewAccuracy } from "@/lib/accuracy";
 import { prisma } from "@/lib/db";
 import { recentMistakeSubjectIds } from "@/lib/mistakes";
-import { DAILY_LESSON_LIMIT, getCurrentLevel, lessonsDoneToday } from "@/lib/progression";
+import { DAILY_LESSON_LIMIT, getCurrentLevel, lessonsDoneToday, reviewsDueBefore } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +23,9 @@ export async function GET() {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 3600_000);
   const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 3600_000);
   const in24h = new Date(now.getTime() + 24 * 3600_000);
+  // While the user is inactivity-frozen this is earlier than `now`, so the
+  // due counts stop growing until they complete a lesson or review.
+  const dueBefore = await reviewsDueBefore(userId, now);
 
   // Everything here is independent, so one round of parallel queries covers
   // the whole dashboard (only the mistake-subject lookup chains a second one).
@@ -31,9 +34,9 @@ export async function GET() {
       getCurrentLevel(userId),
       prisma.assignment.count({ where: { userId, startedAt: null, unlockedAt: { not: null } } }),
       lessonsDoneToday(userId),
-      prisma.assignment.count({ where: { userId, availableAt: { lte: now } } }),
+      prisma.assignment.count({ where: { userId, availableAt: { lte: dueBefore } } }),
       // Custom vocabulary due — its own SRS, surfaced as a dashboard tile.
-      prisma.customVocab.count({ where: { userId, availableAt: { lte: now } } }),
+      prisma.customVocab.count({ where: { userId, availableAt: { lte: dueBefore } } }),
       // Active Item Spread: active items (Apprentice I → Enlightened, stages
       // 1-8) bucketed by SRS stage and stacked by subject type. Burned items
       // (9) are retired, so they are not part of the "active" spread.

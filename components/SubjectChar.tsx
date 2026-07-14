@@ -22,7 +22,7 @@ export function SubjectChar({
   characterImage: string | null;
   className?: string;
 }) {
-  if (characters) return <span className={className}>{characters}</span>;
+  if (characters) return <span lang="ja" className={className}>{characters}</span>;
   if (characterImage) {
     const mask = `url("${characterImage}") center / contain no-repeat`;
     return (

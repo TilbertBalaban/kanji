@@ -74,6 +74,25 @@ export function nextAvailableAt(stage: number, from: Date = new Date()): Date | 
   return new Date(from.getTime() + hours * 3600_000);
 }
 
+// Reviews stop accumulating this long after the user's last review/lesson
+// activity: anything that would come due later is pushed forward instead,
+// so a returning user never faces more than this window's backlog.
+export const INACTIVITY_PAUSE_DAYS = 2;
+
+/**
+ * How far (ms) to push not-yet-accumulated reviews forward when the user
+ * resumes reviewing after more than INACTIVITY_PAUSE_DAYS away, or null while
+ * they're still within the window. Items due before lastActivityAt + the
+ * window keep their dates (that's the allowed backlog); items due after it
+ * shift by the returned amount, preserving their relative spacing — as if the
+ * SRS clock paused at the cutoff and resumed at `now`.
+ */
+export function inactivityShiftMs(lastActivityAt: Date, now: Date = new Date()): number | null {
+  const cutoff = lastActivityAt.getTime() + INACTIVITY_PAUSE_DAYS * 24 * 3600_000;
+  const shift = now.getTime() - cutoff;
+  return shift > 0 ? shift : null;
+}
+
 /**
  * Stage transition after a completed review of one subject.
  * incorrectCount is the total wrong attempts across meaning + reading.

@@ -163,6 +163,9 @@ export default function CustomVocabPage() {
               placeholder="はじめまして (type romaji, converts as you go)"
               lang="ja"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               className="w-full rounded-lg border border-slate-300 p-2.5 text-lg outline-none focus:border-amber-500"
             />
           </label>

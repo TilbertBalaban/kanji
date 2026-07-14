@@ -1,5 +1,14 @@
 import { prisma } from "./db";
-import { BURNED_STAGE, GURU_STAGE, MAX_LEVEL, nextAvailableAt, nextStage, tasksForSubject } from "./srs";
+import {
+  BURNED_STAGE,
+  GURU_STAGE,
+  INACTIVITY_PAUSE_DAYS,
+  MAX_LEVEL,
+  inactivityShiftMs,
+  nextAvailableAt,
+  nextStage,
+  tasksForSubject,
+} from "./srs";
 
 const LEVEL_UP_THRESHOLD = 0.9; // pass 90% of a level's kanji to level up
 
@@ -66,6 +75,59 @@ function startOfToday(now = new Date()): Date {
   return new Date(now.getTime() - msIntoDay);
 }
 
+/**
+ * The latest availableAt that counts as "due" for this user. Normally `now`,
+ * but once the user has gone INACTIVITY_PAUSE_DAYS without completing a
+ * lesson or review, the queue freezes at lastActivityAt + the window: later
+ * reviews stop accumulating until they do a review (see markActivity — merely
+ * looking at the queue does not restart the clock). Every endpoint that
+ * serves or counts due reviews must filter with this bound.
+ */
+export async function reviewsDueBefore(userId: string, now: Date = new Date()): Promise<Date> {
+  const progress = await prisma.userProgress.findUnique({ where: { userId } });
+  if (!progress) return now;
+  const cutoff = new Date(
+    progress.lastActivityAt.getTime() + INACTIVITY_PAUSE_DAYS * 24 * 3600_000,
+  );
+  return cutoff < now ? cutoff : now;
+}
+
+/**
+ * Restart the inactivity clock: called when the user completes a lesson batch
+ * or a review — never from a read path. If they were away beyond the pause
+ * window, first push every review (incl. custom vocab) that came due after
+ * the freeze point forward by the time missed, so the schedule resumes from
+ * now with only the window's backlog intact. Must run before the caller
+ * writes its own availableAt, so fresh dates are never shifted. The
+ * optimistic lastActivityAt claim makes concurrent calls shift exactly once.
+ */
+async function markActivity(userId: string, now: Date) {
+  const progress = await prisma.userProgress.findUnique({ where: { userId } });
+  if (!progress) return;
+
+  const claimed = await prisma.userProgress.updateMany({
+    where: { userId, lastActivityAt: progress.lastActivityAt },
+    data: { lastActivityAt: now },
+  });
+  if (claimed.count === 0) return; // a concurrent call already stamped/shifted
+
+  const shiftMs = inactivityShiftMs(progress.lastActivityAt, now);
+  if (shiftMs === null) return;
+  const cutoff = new Date(now.getTime() - shiftMs);
+
+  const shiftSecs = shiftMs / 1000;
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      UPDATE "Assignment"
+      SET "availableAt" = "availableAt" + make_interval(secs => ${shiftSecs})
+      WHERE "userId" = ${userId} AND "availableAt" > ${cutoff}`,
+    prisma.$executeRaw`
+      UPDATE "CustomVocab"
+      SET "availableAt" = "availableAt" + make_interval(secs => ${shiftSecs})
+      WHERE "userId" = ${userId} AND "availableAt" > ${cutoff}`,
+  ]);
+}
+
 export async function getCurrentLevel(userId: string): Promise<number> {
   const progress = await prisma.userProgress.findUnique({ where: { userId } });
   return progress?.currentLevel ?? 1;
@@ -110,6 +172,8 @@ export async function completeReview(
   const startingStage = assignment.srsStage;
   const endingStage = nextStage(startingStage, incorrect);
   const justPassed = endingStage >= GURU_STAGE && !assignment.passedAt;
+
+  await markActivity(userId, now);
 
   await prisma.$transaction([
     prisma.assignment.update({
@@ -173,6 +237,8 @@ export async function completeCustomVocabReview(
   const startingStage = item.srsStage;
   const endingStage = nextStage(startingStage, incorrect);
   const justPassed = endingStage >= GURU_STAGE && !item.passedAt;
+
+  await markActivity(userId, now);
 
   await prisma.customVocab.update({
     where: { id },
@@ -301,6 +367,7 @@ export async function startLessons(userId: string, subjectIds: number[]) {
   if (ids.length === 0) return;
 
   const now = new Date();
+  await markActivity(userId, now);
   await prisma.assignment.updateMany({
     where: { userId, subjectId: { in: ids }, startedAt: null },
     data: {

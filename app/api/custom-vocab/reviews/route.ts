@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sameMeaningCustomVocab, toCustomVocabDTO } from "@/lib/custom-vocab";
 import { prisma } from "@/lib/db";
+import { reviewsDueBefore } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +18,8 @@ export async function GET() {
   const all = (await prisma.customVocab.findMany({ where: { userId } })).map(toCustomVocabDTO);
   const sameMeaning = sameMeaningCustomVocab(all);
 
-  const now = new Date().toISOString();
-  const items = all.filter((v) => v.availableAt !== null && v.availableAt <= now);
+  const dueBefore = (await reviewsDueBefore(userId)).toISOString();
+  const items = all.filter((v) => v.availableAt !== null && v.availableAt <= dueBefore);
 
   for (let i = items.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

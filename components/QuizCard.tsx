@@ -138,6 +138,7 @@ export function QuizCard({
             lang={wantsKana ? "ja" : "en"}
             autoComplete="off"
             autoCorrect="off"
+            autoCapitalize="none"
             spellCheck={false}
             readOnly={feedback === "correct" || feedback === "incorrect"}
           />

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { reviewsDueBefore } from "@/lib/progression";
 import { relatedAnswersBySubject } from "@/lib/related-answers";
 import { toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
@@ -12,7 +13,7 @@ export async function GET() {
   if (response) return response;
 
   const assignments = await prisma.assignment.findMany({
-    where: { userId, availableAt: { lte: new Date() } },
+    where: { userId, availableAt: { lte: await reviewsDueBefore(userId) } },
     include: { subject: true },
   });
 
