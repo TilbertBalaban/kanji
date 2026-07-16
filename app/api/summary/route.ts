@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { reviewAccuracy } from "@/lib/accuracy";
 import { prisma } from "@/lib/db";
 import { recentMistakeSubjectIds } from "@/lib/mistakes";
-import { DAILY_LESSON_LIMIT, getCurrentLevel, lessonsDoneToday, reviewsDueBefore } from "@/lib/progression";
+import {
+  getCurrentLevel,
+  getLessonLimits,
+  grammarLessonsDoneToday,
+  lessonsDoneToday,
+  reviewsDueBefore,
+} from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -29,14 +35,32 @@ export async function GET() {
 
   // Everything here is independent, so one round of parallel queries covers
   // the whole dashboard (only the mistake-subject lookup chains a second one).
-  const [currentLevel, lessonCount, doneToday, reviewCount, customReviewCount, activeItems, mistakeIds, accuracyLogs, upcoming] =
-    await Promise.all([
+  const [
+    currentLevel,
+    lessonCount,
+    doneToday,
+    reviewCount,
+    customReviewCount,
+    grammarReviewCount,
+    grammarLessonCount,
+    grammarDoneToday,
+    activeItems,
+    mistakeIds,
+    accuracyLogs,
+    upcoming,
+    { dailyLessonLimit, grammarDailyLessonLimit },
+  ] = await Promise.all([
       getCurrentLevel(userId),
       prisma.assignment.count({ where: { userId, startedAt: null, unlockedAt: { not: null } } }),
       lessonsDoneToday(userId),
       prisma.assignment.count({ where: { userId, availableAt: { lte: dueBefore } } }),
       // Custom vocabulary due — its own SRS, surfaced as a dashboard tile.
       prisma.customVocab.count({ where: { userId, availableAt: { lte: dueBefore } } }),
+      // Grammar due/lessons — its own SRS, surfaced as dashboard tiles too
+      // (everything else about it lives on /grammar, not the main dashboard).
+      prisma.grammarProgress.count({ where: { userId, availableAt: { lte: dueBefore } } }),
+      prisma.grammarPoint.count({ where: { progress: { none: { userId } } } }),
+      grammarLessonsDoneToday(userId),
       // Active Item Spread: active items (Apprentice I → Enlightened, stages
       // 1-8) bucketed by SRS stage and stacked by subject type. Burned items
       // (9) are retired, so they are not part of the "active" spread.
@@ -66,6 +90,7 @@ export async function GET() {
         where: { userId, availableAt: { gt: now, lte: in24h } },
         select: { availableAt: true },
       }),
+      getLessonLimits(userId),
     ]);
 
   const spread = Array.from({ length: 8 }, (_, i) => ({
@@ -112,10 +137,16 @@ export async function GET() {
     lessonCount,
     lessonsAvailableToday: Math.min(
       lessonCount,
-      Math.max(0, DAILY_LESSON_LIMIT - doneToday),
+      Math.max(0, dailyLessonLimit - doneToday),
     ),
     reviewCount,
     customReviewCount,
+    grammarReviewCount,
+    grammarLessonCount,
+    grammarLessonsAvailableToday: Math.min(
+      grammarLessonCount,
+      Math.max(0, grammarDailyLessonLimit - grammarDoneToday),
+    ),
     forecast,
     spread,
     recentMistakes,

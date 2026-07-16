@@ -12,8 +12,49 @@ import {
 
 const LEVEL_UP_THRESHOLD = 0.9; // pass 90% of a level's kanji to level up
 
-export const DAILY_LESSON_LIMIT = 10;
 export const EXTRA_LESSON_BATCH = 5; // opt-in batch size once the daily limit is reached
+
+// Defaults live on UserProgress (dailyLessonLimit/grammarDailyLessonLimit) so
+// each user can tune their own pace from /profile — see getLessonLimits.
+export const DEFAULT_DAILY_LESSON_LIMIT = 10;
+export const DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT = 2;
+
+const MIN_LESSON_LIMIT = 1;
+const MAX_LESSON_LIMIT = 200;
+
+/** The user's configured daily lesson caps, defaulting a missing row to the constants above. */
+export async function getLessonLimits(
+  userId: string,
+): Promise<{ dailyLessonLimit: number; grammarDailyLessonLimit: number }> {
+  const progress = await prisma.userProgress.findUnique({
+    where: { userId },
+    select: { dailyLessonLimit: true, grammarDailyLessonLimit: true },
+  });
+  return {
+    dailyLessonLimit: progress?.dailyLessonLimit ?? DEFAULT_DAILY_LESSON_LIMIT,
+    grammarDailyLessonLimit: progress?.grammarDailyLessonLimit ?? DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT,
+  };
+}
+
+/** Update one or both daily lesson caps; each must be an integer in [1, 200]. */
+export async function setLessonLimits(
+  userId: string,
+  limits: { dailyLessonLimit?: number; grammarDailyLessonLimit?: number },
+) {
+  const data: { dailyLessonLimit?: number; grammarDailyLessonLimit?: number } = {};
+  for (const [key, value] of Object.entries(limits) as [
+    "dailyLessonLimit" | "grammarDailyLessonLimit",
+    number | undefined,
+  ][]) {
+    if (value === undefined) continue;
+    if (!Number.isInteger(value) || value < MIN_LESSON_LIMIT || value > MAX_LESSON_LIMIT) {
+      throw new Error(`${key} must be an integer between ${MIN_LESSON_LIMIT} and ${MAX_LESSON_LIMIT}`);
+    }
+    data[key] = value;
+  }
+  if (Object.keys(data).length === 0) return;
+  await prisma.userProgress.update({ where: { userId }, data });
+}
 
 /**
  * Set up a user's progress the first time they log in: level 1 with the
@@ -50,6 +91,13 @@ export async function ensureUserInitialized(userId: string) {
  */
 export async function lessonsDoneToday(userId: string): Promise<number> {
   return prisma.assignment.count({
+    where: { userId, startedAt: { gte: startOfToday() } },
+  });
+}
+
+/** Grammar lessons completed since midnight — see lessonsDoneToday. */
+export async function grammarLessonsDoneToday(userId: string): Promise<number> {
+  return prisma.grammarProgress.count({
     where: { userId, startedAt: { gte: startOfToday() } },
   });
 }
@@ -123,6 +171,10 @@ async function markActivity(userId: string, now: Date) {
       WHERE "userId" = ${userId} AND "availableAt" > ${cutoff}`,
     prisma.$executeRaw`
       UPDATE "CustomVocab"
+      SET "availableAt" = "availableAt" + make_interval(secs => ${shiftSecs})
+      WHERE "userId" = ${userId} AND "availableAt" > ${cutoff}`,
+    prisma.$executeRaw`
+      UPDATE "GrammarProgress"
       SET "availableAt" = "availableAt" + make_interval(secs => ${shiftSecs})
       WHERE "userId" = ${userId} AND "availableAt" > ${cutoff}`,
   ]);
@@ -360,8 +412,11 @@ export async function unlockLevel(userId: string, level: number) {
  * so a hand-crafted request can't start the whole queue at once.
  */
 export async function startLessons(userId: string, subjectIds: number[]) {
-  const doneToday = await lessonsDoneToday(userId);
-  const remainingToday = Math.max(0, DAILY_LESSON_LIMIT - doneToday);
+  const [{ dailyLessonLimit }, doneToday] = await Promise.all([
+    getLessonLimits(userId),
+    lessonsDoneToday(userId),
+  ]);
+  const remainingToday = Math.max(0, dailyLessonLimit - doneToday);
   const allowed = Math.max(remainingToday, EXTRA_LESSON_BATCH);
   const ids = subjectIds.slice(0, allowed);
   if (ids.length === 0) return;
@@ -375,5 +430,108 @@ export async function startLessons(userId: string, subjectIds: number[]) {
       startedAt: now,
       availableAt: nextAvailableAt(1, now),
     },
+  });
+}
+
+/**
+ * Apply a finished grammar review (one cloze prompt, reveal+retype on a miss)
+ * to a GrammarProgress row: same stage math as completeReview, but no review
+ * log dimensions beyond the single incorrectCount/correctCount pair, no
+ * unlock cascade, no level-up. incorrectCount is binary — see
+ * lib/grammar-answer-checker.ts and the page's reveal+retype state machine:
+ * only the first miss before the correct retype counts, so it's always 0 or
+ * 1 regardless of how many failed retypes happened after the reveal. Rejects
+ * progress that isn't due, so a replayed completion can't advance it twice.
+ */
+export async function completeGrammarReview(
+  userId: string,
+  grammarPointId: number,
+  incorrectCount: number,
+) {
+  const progress = await prisma.grammarProgress.findUnique({
+    where: { userId_grammarPointId: { userId, grammarPointId } },
+  });
+  if (!progress || !progress.startedAt) {
+    throw new Error(`No started grammar progress for point ${grammarPointId}`);
+  }
+  const now = new Date();
+  if (!progress.availableAt || progress.availableAt > now) {
+    throw new Error(`Review is not due for grammar point ${grammarPointId}`);
+  }
+
+  const startingStage = progress.srsStage;
+  const endingStage = nextStage(startingStage, incorrectCount);
+  const justPassed = endingStage >= GURU_STAGE && !progress.passedAt;
+
+  const sentenceCount = await prisma.grammarSentence.count({ where: { grammarPointId } });
+  const nextCursor = sentenceCount > 0 ? (progress.sentenceCursor + 1) % sentenceCount : 0;
+
+  await markActivity(userId, now);
+
+  await prisma.$transaction([
+    prisma.grammarProgress.update({
+      where: { userId_grammarPointId: { userId, grammarPointId } },
+      data: {
+        srsStage: endingStage,
+        availableAt: nextAvailableAt(endingStage, now),
+        passedAt: justPassed ? now : progress.passedAt,
+        burnedAt: endingStage === BURNED_STAGE ? now : null,
+        sentenceCursor: nextCursor,
+      },
+    }),
+    prisma.grammarReviewLog.create({
+      data: {
+        userId,
+        grammarPointId,
+        startingStage,
+        endingStage,
+        incorrectCount,
+        correctCount: 1,
+      },
+    }),
+  ]);
+
+  return { startingStage, endingStage };
+}
+
+/**
+ * Move freshly-taught grammar points into the review queue at Apprentice I.
+ * Unlike startLessons, GrammarProgress rows don't pre-exist (there's no
+ * unlock cascade creating them ahead of time), so this creates them directly
+ * rather than updating placeholders. Like startLessons, the write path
+ * enforces what the read path serves: only the next points on the fixed
+ * sequential path, at most the day's remaining count (or one opt-in extra
+ * batch) — a hand-crafted request can't skip ahead or start the whole
+ * catalog, and unknown ids never reach createMany's FK.
+ */
+export async function startGrammarLessons(userId: string, grammarPointIds: number[]) {
+  const [{ grammarDailyLessonLimit }, doneToday] = await Promise.all([
+    getLessonLimits(userId),
+    grammarLessonsDoneToday(userId),
+  ]);
+  const remainingToday = Math.max(0, grammarDailyLessonLimit - doneToday);
+  const allowed = Math.max(remainingToday, EXTRA_LESSON_BATCH);
+
+  const eligible = await prisma.grammarPoint.findMany({
+    where: { progress: { none: { userId } } },
+    orderBy: { sequence: "asc" },
+    take: allowed,
+    select: { id: true },
+  });
+  const eligibleIds = new Set(eligible.map((p) => p.id));
+  const ids = grammarPointIds.filter((id) => eligibleIds.has(id));
+  if (ids.length === 0) return;
+
+  const now = new Date();
+  await markActivity(userId, now);
+  await prisma.grammarProgress.createMany({
+    data: ids.map((grammarPointId) => ({
+      userId,
+      grammarPointId,
+      srsStage: 1,
+      startedAt: now,
+      availableAt: nextAvailableAt(1, now),
+    })),
+    skipDuplicates: true,
   });
 }

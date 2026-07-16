@@ -28,6 +28,9 @@ interface Summary {
   lessonsAvailableToday: number;
   reviewCount: number;
   customReviewCount: number;
+  grammarReviewCount: number;
+  grammarLessonCount: number;
+  grammarLessonsAvailableToday: number;
   forecast: Record<string, number>;
   spread: StageBucket[];
   recentMistakes: Mistake[];
@@ -84,6 +87,30 @@ export default function Dashboard() {
         >
           <div className="text-4xl font-bold">{summary.customReviewCount}</div>
           <div className="mt-1 text-amber-100">Custom vocab reviews due</div>
+        </Link>
+        <div
+          className="rounded-xl p-6 text-white shadow transition-transform hover:scale-[1.02]"
+          style={{ backgroundColor: TYPE_COLORS.grammar }}
+        >
+          <Link href="/grammar/lessons" className="block">
+            <div className="text-4xl font-bold">{summary.grammarLessonsAvailableToday}</div>
+            <div className="mt-1 text-white opacity-90">Grammar lessons available today</div>
+          </Link>
+          {summary.grammarLessonCount > summary.grammarLessonsAvailableToday && (
+            <Link
+              href="/grammar/lessons?extra=1"
+              className="mt-2 inline-block text-sm font-medium text-white underline decoration-white/50 underline-offset-2 hover:decoration-white"
+            >
+              Start extra lesson →
+            </Link>
+          )}
+        </div>
+        <Link
+          href="/grammar/reviews"
+          className="rounded-xl bg-emerald-700 p-6 text-white shadow transition-transform hover:scale-[1.02]"
+        >
+          <div className="text-4xl font-bold">{summary.grammarReviewCount}</div>
+          <div className="mt-1 text-emerald-100">Grammar reviews due</div>
         </Link>
       </div>
 

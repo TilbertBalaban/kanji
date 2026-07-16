@@ -135,6 +135,10 @@ model UserProgress {
   // Last completed lesson batch or review — reads never touch this. Reviews
   // stop accumulating INACTIVITY_PAUSE_DAYS after it — see lib/progression.ts.
   lastActivityAt DateTime @default(now())
+  // Per-user lesson pacing — see startLessons/startGrammarLessons in
+  // lib/progression.ts. Configurable from /profile.
+  dailyLessonLimit        Int @default(10)
+  grammarDailyLessonLimit Int @default(2)
 }
 
 // A user's own vocabulary (words/phrases not in WaniKani), each row carrying
@@ -159,4 +163,110 @@ model CustomVocab {
 
   @@unique([userId, characters])
   @@index([userId, availableAt])
+}
+
+// Bunpro-style grammar SRS: a fixed N5→N1 catalog of grammar points, each
+// studied via cloze (fill-in-the-blank) review of its example sentences. A
+// parallel subsystem like CustomVocab — reuses lib/srs.ts's stage model and
+// intervals but never touches Assignment/ReviewLog/Subject or the WaniKani
+// unlock/level-up cascade. Unlike CustomVocab, the catalog is shared across
+// users (seeded once from Bunpro), so it follows the Subject/Assignment split
+// instead of an embedded single-table model.
+model GrammarPoint {
+  id             Int      @id @default(autoincrement())
+  title          String
+  jlptLevel      Int // 5 = N5 … 1 = N1
+  position       Int // ordinal within its JLPT level
+  sequence       Int // precomputed global ordinal N5→N1 for the fixed path
+  lessonId       Int      @default(0) // Bunpro's global lesson id (1..50), 10 lessons per JLPT level
+  lessonDescription String @default("") // Bunpro's lesson title, e.g. "Things that Are Crucial..."
+  meaning        String
+  structure      String
+  explanation    String // may hold light markup; sanitized to plain text at seed time
+  partOfSpeech   String?
+  register       String?
+  wordType       String   @default("") // Bunpro's word_type_translation, e.g. "Dependent Word"
+  caution        String   @default("") // Bunpro's short header warning, e.g. "だ cannot be used with い-Adjectives"
+  aboutIntro     String   @default("") // writeup body before the first caution subsection, plain text
+  aboutIntroExamples String @default("[]") // JSON [{japanese, english, audioUrl}] — examples cited inline in aboutIntro, resolved at scrape time
+  aboutCautions  String   @default("[]") // JSON [{text, examples: [{japanese, english, audioUrl}]}] — writeup caution subsections
+  slug           String   @unique
+
+  sentences GrammarSentence[]
+  progress  GrammarProgress[]
+  reviewLogs GrammarReviewLog[]
+  relations GrammarRelation[]
+
+  @@index([sequence])
+  @@index([jlptLevel, position])
+}
+
+// Synonym/antonym/related links between grammar points, denormalized (title/
+// meaning/slug of the "other" side stored directly, not FK'd) since Bunpro's
+// relatedContents already gives us that data and the other point is always
+// itself a seeded JLPT GrammarPoint by the time we filter+persist this.
+model GrammarRelation {
+  id               Int      @id @default(autoincrement())
+  grammarPointId   Int
+  grammarPoint     GrammarPoint @relation(fields: [grammarPointId], references: [id])
+  relationshipType String // "synonym" | "antonym" | "related"
+  body             String
+  otherSlug        String
+  otherTitle       String
+  otherMeaning     String
+
+  @@index([grammarPointId])
+}
+
+// Example sentences for a grammar point; reviews rotate through these via
+// GrammarProgress.sentenceCursor. Always fetch ordered by position — rotation
+// depends on a stable order.
+model GrammarSentence {
+  id              Int      @id @default(autoincrement())
+  grammarPointId  Int
+  grammarPoint    GrammarPoint @relation(fields: [grammarPointId], references: [id])
+  bunproId        Int? // Bunpro's study_question id — lets aboutCautions/aboutIntroExampleIds cite a stable sentence
+  japanese        String
+  english         String
+  acceptedAnswers String // JSON [string] — must include at least one kana-only variant (quiz input is kana-only)
+  audioUrl        String? // R2
+  position        Int
+
+  @@unique([grammarPointId, position])
+  @@index([grammarPointId])
+}
+
+// Per-user SRS state for a grammar point. Rows are created at lesson start
+// (Apprentice I), so there is no separate unlockedAt — it would always equal
+// startedAt.
+model GrammarProgress {
+  id             Int      @id @default(autoincrement())
+  userId         String
+  grammarPointId Int
+  grammarPoint   GrammarPoint @relation(fields: [grammarPointId], references: [id])
+  srsStage       Int       @default(0)
+  startedAt      DateTime?
+  availableAt    DateTime?
+  passedAt       DateTime?
+  burnedAt       DateTime?
+  sentenceCursor Int       @default(0) // rotates which example sentence is shown next
+
+  @@unique([userId, grammarPointId])
+  @@index([userId, availableAt])
+  @@index([availableAt])
+}
+
+model GrammarReviewLog {
+  id             Int      @id @default(autoincrement())
+  userId         String
+  grammarPointId Int
+  grammarPoint   GrammarPoint @relation(fields: [grammarPointId], references: [id])
+  createdAt      DateTime @default(now())
+  startingStage  Int
+  endingStage    Int
+  incorrectCount Int      @default(0) // binary: 1 if there was any miss before the correct retype, else 0
+  correctCount   Int      @default(0)
+
+  @@index([createdAt])
+  @@index([userId])
 }

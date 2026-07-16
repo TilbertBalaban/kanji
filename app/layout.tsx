@@ -21,6 +21,7 @@ const NAV = [
   { href: "/kanji", label: "Kanji" },
   { href: "/vocabulary", label: "Vocabulary" },
   { href: "/custom", label: "My Vocab" },
+  { href: "/grammar", label: "Grammar" },
 ];
 
 export default function RootLayout({
@@ -34,7 +35,10 @@ export default function RootLayout({
       className={`${geistSans.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-screen bg-slate-100 text-slate-900">
+      <body
+        className="min-h-screen bg-slate-100 text-slate-900"
+        suppressHydrationWarning
+      >
         <ClerkProvider>
           <header className="bg-slate-900 text-white">
             <nav className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3">

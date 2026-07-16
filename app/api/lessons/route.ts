@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
-  DAILY_LESSON_LIMIT,
   EXTRA_LESSON_BATCH,
+  getLessonLimits,
   lessonsDoneToday,
 } from "@/lib/progression";
 import { relatedAnswersBySubject } from "@/lib/related-answers";
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   // ?extra=1 bypasses the daily limit for one opt-in batch of EXTRA_LESSON_BATCH
   const extra = req.nextUrl.searchParams.get("extra") === "1";
 
-  const [assignments, doneToday] = await Promise.all([
+  const [assignments, doneToday, { dailyLessonLimit }] = await Promise.all([
     prisma.assignment.findMany({
       where: { userId, startedAt: null, unlockedAt: { not: null } },
       select: {
@@ -37,9 +37,10 @@ export async function GET(req: NextRequest) {
       },
     }),
     lessonsDoneToday(userId),
+    getLessonLimits(userId),
   ]);
 
-  const remainingToday = Math.max(0, DAILY_LESSON_LIMIT - doneToday);
+  const remainingToday = Math.max(0, dailyLessonLimit - doneToday);
   const batch = extra ? EXTRA_LESSON_BATCH : Math.min(limit, remainingToday);
 
   // WaniKani default order: level asc, then radicals → kanji → vocab,
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     total: assignments.length,
     doneToday,
-    dailyLimit: DAILY_LESSON_LIMIT,
+    dailyLimit: dailyLessonLimit,
     extraBatchSize: EXTRA_LESSON_BATCH,
     subjects,
   });

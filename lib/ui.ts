@@ -8,6 +8,7 @@ export const TYPE_COLORS: Record<string, string> = {
   vocabulary: "#a100f1",
   kana_vocabulary: "#a100f1",
   custom: "#f1a100",
+  grammar: "#16a34a",
 };
 
 export const TYPE_LABELS: Record<string, string> = {
@@ -16,6 +17,7 @@ export const TYPE_LABELS: Record<string, string> = {
   vocabulary: "Vocabulary",
   kana_vocabulary: "Vocabulary",
   custom: "Custom Vocab",
+  grammar: "Grammar",
 };
 
 // The stage model (and its display grouping) lives in lib/srs.ts.

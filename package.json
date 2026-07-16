@@ -16,7 +16,9 @@
     "test": "vitest run",
     "fetch:radical-images": "tsx --env-file=.env scripts/fetch-radical-images.ts",
     "mirror:assets": "tsx --env-file=.env scripts/mirror-assets.ts",
-    "fetch:radical-character-images": "tsx --env-file=.env scripts/fetch-radical-character-images.ts"
+    "fetch:radical-character-images": "tsx --env-file=.env scripts/fetch-radical-character-images.ts",
+    "seed:grammar": "tsx --env-file=.env scripts/seed-grammar.ts",
+    "mirror:grammar-audio": "tsx --env-file=.env scripts/mirror-grammar-audio.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",
