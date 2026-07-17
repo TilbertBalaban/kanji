@@ -230,18 +230,29 @@ export default function CustomReviewsPage() {
   const wantsKana = task.kind === "reading" || task.kind === "recall";
   const spokenText = current.vocab.readings[0] ?? current.vocab.characters;
 
+  // Each question (meaning / reading / recall) counts as one step of progress.
+  const totalSteps = items.reduce(
+    (n, it) => n + 1 + (it.needsReading ? 1 : 0) + (it.needsRecall ? 1 : 0),
+    0,
+  );
+  const doneSteps = items.reduce(
+    (n, it) =>
+      n + (it.meaningDone ? 1 : 0) + (it.readingDone ? 1 : 0) + (it.recallDone ? 1 : 0),
+    0,
+  );
+
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
         <span>
-          {completed} / {items.length} done
+          {doneSteps} / {totalSteps} done
         </span>
         <span>{sessionWrong} wrong answers this session</span>
       </div>
       <div className="mb-6 h-2 overflow-hidden rounded-full bg-slate-200">
         <div
           className="h-full bg-green-500 transition-all"
-          style={{ width: `${(completed / items.length) * 100}%` }}
+          style={{ width: `${(doneSteps / totalSteps) * 100}%` }}
         />
       </div>
 
