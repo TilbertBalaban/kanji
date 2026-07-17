@@ -46,6 +46,7 @@ function GrammarReviewsSession() {
   const [index, setIndex] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<GrammarFeedback>("idle");
+  const [notice, setNotice] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
@@ -99,6 +100,7 @@ function GrammarReviewsSession() {
   const advance = useCallback(() => {
     if (!items) return;
     setFeedback("idle");
+    setNotice(null);
     setInput("");
     setIndex(pickIndex(items));
   }, [items]);
@@ -112,13 +114,21 @@ function GrammarReviewsSession() {
       return;
     }
 
-    const verdict = checkGrammarAnswer(input, item.data.sentence.acceptedAnswers);
+    const verdict = checkGrammarAnswer(
+      input,
+      item.data.sentence.acceptedAnswers,
+      item.data.sentence.wrongAnswerHints,
+    );
 
     if (verdict.action === "retry") {
       // Shake and keep the hint up until the answer is edited — but if the
       // answer is already revealed (an empty Enter after a miss), keep showing
       // it: the user still has to retype it, so hiding it now would defeat
-      // reveal+retype.
+      // reveal+retype. A meaning-equivalent wrong form lands here too (with
+      // its hint as the message), not in the fail branch — it doesn't count
+      // as a miss. In the revealed state the empty-input nudge is dropped
+      // (the red banner already says to retype) but a real hint still shows.
+      setNotice(item.missed && !input.trim() ? null : verdict.message);
       setFeedback(item.missed ? "revealed" : "retry");
       return;
     }
@@ -218,10 +228,12 @@ function GrammarReviewsSession() {
         input={input}
         onInputChange={(value) => {
           setInput(value);
+          setNotice(null);
           if (feedback === "retry") setFeedback("idle");
         }}
         onSubmit={handleSubmit}
         feedback={feedback}
+        notice={notice}
         inputRef={inputRef}
       />
 

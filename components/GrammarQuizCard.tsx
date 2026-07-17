@@ -9,6 +9,7 @@
 
 import { type RefObject } from "react";
 import * as wanakana from "wanakana";
+import { EmphasisText } from "@/components/GrammarPointInfo";
 import { GRAMMAR_BLANK, type GrammarSentenceDTO } from "@/lib/grammar";
 import { TYPE_COLORS } from "@/lib/ui";
 
@@ -22,6 +23,7 @@ export function GrammarQuizCard({
   onInputChange,
   onSubmit,
   feedback,
+  notice,
   inputRef,
 }: {
   sentence: GrammarSentenceDTO;
@@ -29,6 +31,12 @@ export function GrammarQuizCard({
   onInputChange: (value: string) => void;
   onSubmit: () => void;
   feedback: GrammarFeedback;
+  // Hint shown on a shake — e.g. the wrong-answer hint for a meaning-
+  // equivalent form ("Could you try a grammar point that is more casual
+  // here?"). The answer wasn't counted wrong; nudge, don't scold. Also
+  // rendered in the revealed state, where a hint form would otherwise
+  // shake silently.
+  notice?: string | null;
   inputRef: RefObject<HTMLInputElement | null>;
 }) {
   const answer = sentence.acceptedAnswers[0] ?? "";
@@ -71,7 +79,7 @@ export function GrammarQuizCard({
         </p>
       </div>
       <div className="bg-gradient-to-b from-slate-100 to-slate-300 px-4 py-2 text-center text-sm text-slate-700">
-        {sentence.english}
+        <EmphasisText text={sentence.english} />
       </div>
       <div className={`relative border-t-4 transition-colors ${feedbackClasses}`}>
         <input
@@ -104,6 +112,9 @@ export function GrammarQuizCard({
         <p className="bg-red-50 px-4 py-2 text-center text-sm text-red-700">
           Not quite — the correct form is shown above. Type it to continue.
         </p>
+      )}
+      {(feedback === "retry" || feedback === "revealed") && notice && (
+        <p className="bg-amber-50 px-4 py-2 text-center text-sm text-amber-800">{notice}</p>
       )}
     </div>
   );

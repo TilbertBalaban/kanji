@@ -187,9 +187,10 @@ model GrammarPoint {
   register       String?
   wordType       String   @default("") // Bunpro's word_type_translation, e.g. "Dependent Word"
   caution        String   @default("") // Bunpro's short header warning, e.g. "だ cannot be used with い-Adjectives"
-  aboutIntro     String   @default("") // writeup body before the first caution subsection, plain text
-  aboutIntroExamples String @default("[]") // JSON [{japanese, english, audioUrl}] — examples cited inline in aboutIntro, resolved at scrape time
+  aboutIntroBlocks String @default("[]") // JSON [{type:"text",text} | {type:"examples",examples:[{japanese,english,audioUrl}]}] — writeup body before the first caution subsection, in original prose/example order
   aboutCautions  String   @default("[]") // JSON [{text, examples: [{japanese, english, audioUrl}]}] — writeup caution subsections
+  onlineResources  String @default("[]") // JSON [{site, description, link}] — Bunpro's "Online" reading links
+  offlineResources String @default("[]") // JSON [{source, location}] — Bunpro's "Offline" textbook references
   slug           String   @unique
 
   sentences GrammarSentence[]
@@ -199,6 +200,17 @@ model GrammarPoint {
 
   @@index([sequence])
   @@index([jlptLevel, position])
+}
+
+// Bunpro's explainer modals behind the info dots on a grammar point page:
+// Parts of Speech Legend, Word Type Legend, Register, Structure Legend, and
+// the "All Technical Terms" glossary the first two link to. Site-wide static
+// content (not per-point), scraped once from Bunpro's translation bundles by
+// scripts/seed-grammar-legends.ts — stored in the DB like every other
+// Bunpro-sourced text so none of it lives in the repo.
+model GrammarLegend {
+  key  String @id // "part-of-speech" | "word-type" | "register" | "structure" | "all-terms"
+  data String // JSON GrammarLegendDTO minus key — see lib/grammar.ts
 }
 
 // Synonym/antonym/related links between grammar points, denormalized (title/
@@ -229,6 +241,7 @@ model GrammarSentence {
   japanese        String
   english         String
   acceptedAnswers String // JSON [string] — must include at least one kana-only variant (quiz input is kana-only)
+  wrongAnswerHints String @default("{}") // JSON {wrongAnswer: hint} — meaning-equivalent misses shake with the hint instead of failing
   audioUrl        String? // R2
   position        Int
 

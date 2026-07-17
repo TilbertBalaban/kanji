@@ -56,6 +56,37 @@ describe("checkGrammarAnswer", () => {
       message: null,
     });
   });
+
+  it("retries with the hint on a meaning-equivalent wrong form", () => {
+    const hints = { です: "Could you try a grammar point that is more casual here?" };
+    expect(checkGrammarAnswer("です", ["だ"], hints)).toEqual({
+      action: "retry",
+      message: "Could you try a grammar point that is more casual here?",
+    });
+  });
+
+  it("normalizes the guess against hint keys (katakana input)", () => {
+    const hints = { です: "More casual, please." };
+    expect(checkGrammarAnswer("デス", ["だ"], hints)).toEqual({
+      action: "retry",
+      message: "More casual, please.",
+    });
+  });
+
+  it("prefers an accepted answer over a matching hint key", () => {
+    // If Bunpro data ever lists an accepted form as a hint too, passing wins.
+    expect(checkGrammarAnswer("です", ["です"], { です: "hint" })).toEqual({
+      action: "pass",
+      message: null,
+    });
+  });
+
+  it("still fails a wrong answer that is not a hint key", () => {
+    expect(checkGrammarAnswer("ます", ["だ"], { です: "hint" })).toEqual({
+      action: "fail",
+      message: null,
+    });
+  });
 });
 
 describe("normalizeGrammarAnswer", () => {

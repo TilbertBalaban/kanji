@@ -21,14 +21,17 @@ import {
   type BunproCatalogPoint,
   type BunproPointDetail,
   fetchCatalog,
-  fetchPointDetail,
+  fetchPointIncluded,
+  parsePointDetail,
   sleep,
 } from "../lib/bunpro-scraper";
 import { prisma } from "../lib/db";
 
-// v2: includes writeup + relations alongside sentences (v1 cache only held
-// sentences and is no longer compatible — see git history if you need it).
-const CACHE_DIR = path.join(__dirname, "..", ".bunpro-cache-v2");
+// Caches each page's RAW `included` JSON, unlike the retired v1–v4 dirs which
+// cached parsed output and therefore went stale on every parser change (four
+// full ~945-page re-scrapes in one day). Parsing now happens fresh on every
+// run from this raw cache, so parser changes never force a re-fetch.
+const CACHE_DIR = path.join(__dirname, "..", ".bunpro-cache-raw");
 // Politeness delay between per-point requests — this is a personal account
 // scraping its own paid content, not a bulk crawl; no reason to hammer it.
 const REQUEST_DELAY_MS = 400;
@@ -67,16 +70,15 @@ async function cachedDetail(
   point: BunproCatalogPoint,
 ): Promise<BunproPointDetail> {
   const cachePath = path.join(CACHE_DIR, `${point.id}.json`);
+  let included: any;
   try {
-    const cached = await readFile(cachePath, "utf-8");
-    return JSON.parse(cached);
+    included = JSON.parse(await readFile(cachePath, "utf-8"));
   } catch {
-    // not cached yet — fetch below
+    included = await fetchPointIncluded(sessionCookie, point.id);
+    await writeFile(cachePath, JSON.stringify(included));
+    await sleep(REQUEST_DELAY_MS);
   }
-  const detail = await fetchPointDetail(sessionCookie, point.id, GRAMMAR_BLANK);
-  await writeFile(cachePath, JSON.stringify(detail, null, 2));
-  await sleep(REQUEST_DELAY_MS);
-  return detail;
+  return parsePointDetail(included, point.id, GRAMMAR_BLANK);
 }
 
 async function main() {
@@ -135,9 +137,10 @@ async function main() {
         register: bp.register,
         wordType: bp.wordType ?? "",
         caution: bp.caution,
-        aboutIntro: detail.writeup.introText,
-        aboutIntroExamples: JSON.stringify(detail.writeup.introExamples),
+        aboutIntroBlocks: JSON.stringify(detail.writeup.introBlocks),
         aboutCautions: JSON.stringify(detail.writeup.cautions),
+        onlineResources: JSON.stringify(detail.onlineResources),
+        offlineResources: JSON.stringify(detail.offlineResources),
         slug: bp.slug,
       },
       update: {
@@ -154,9 +157,10 @@ async function main() {
         register: bp.register,
         wordType: bp.wordType ?? "",
         caution: bp.caution,
-        aboutIntro: detail.writeup.introText,
-        aboutIntroExamples: JSON.stringify(detail.writeup.introExamples),
+        aboutIntroBlocks: JSON.stringify(detail.writeup.introBlocks),
         aboutCautions: JSON.stringify(detail.writeup.cautions),
+        onlineResources: JSON.stringify(detail.onlineResources),
+        offlineResources: JSON.stringify(detail.offlineResources),
       },
     });
     pointIdByBunproId.set(bp.id, point.id);
@@ -171,6 +175,7 @@ async function main() {
           japanese: s.japanese,
           english: s.english,
           acceptedAnswers: JSON.stringify(s.acceptedAnswers),
+          wrongAnswerHints: JSON.stringify(s.wrongAnswerHints),
           audioUrl: s.audioUrl,
           position: i,
         },
@@ -182,6 +187,7 @@ async function main() {
           japanese: s.japanese,
           english: s.english,
           acceptedAnswers: JSON.stringify(s.acceptedAnswers),
+          wrongAnswerHints: JSON.stringify(s.wrongAnswerHints),
         },
       });
     }

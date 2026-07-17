@@ -24,16 +24,26 @@ export function normalizeGrammarAnswer(s: string): string {
  * of a grammar drill. Stateless: the reveal+retype "already missed" flag and
  * the resulting incorrectCount (0 or 1, never accumulating across retries)
  * live on the page, not here.
+ *
+ * A guess matching a wrongAnswerHints key (Bunpro's per-sentence map of
+ * meaning-equivalent-but-wrong forms, e.g. です for a だ cloze) retries with
+ * the hint rather than failing — real but not the requested form, mirroring
+ * checkReading's shake for a valid-but-other reading. Accepted answers win
+ * when a form appears in both.
  */
 export function checkGrammarAnswer(
   input: string,
   acceptedAnswers: string[],
+  wrongAnswerHints: Record<string, string> = {},
 ): GrammarVerdict {
   const guess = normalizeGrammarAnswer(input);
   if (!guess) return { action: "retry", message: "Type your answer to continue." };
 
   const isMatch = acceptedAnswers.some((a) => normalizeGrammarAnswer(a) === guess);
-  return isMatch
-    ? { action: "pass", message: null }
-    : { action: "fail", message: null };
+  if (isMatch) return { action: "pass", message: null };
+
+  for (const [wrong, hint] of Object.entries(wrongAnswerHints)) {
+    if (normalizeGrammarAnswer(wrong) === guess) return { action: "retry", message: hint };
+  }
+  return { action: "fail", message: null };
 }

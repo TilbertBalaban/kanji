@@ -50,8 +50,7 @@ prisma/dev.db
 prisma/dev.db-journal
 
 # scraped Bunpro page cache (seed script resume cache, not for distribution)
-/.bunpro-cache/
-/.bunpro-cache-v2/
+/.bunpro-cache*/
 
 # keep the documented example env committed
 !.env.example

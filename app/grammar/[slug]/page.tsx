@@ -3,8 +3,21 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AboutExamples, GRAMMAR_RELATION_SECTIONS, SentenceCard } from "@/components/GrammarPointInfo";
-import type { GrammarAboutCautionDTO, GrammarAboutExampleDTO, GrammarRelationDTO } from "@/lib/grammar";
+import { LegendInfoButton } from "@/components/GrammarLegendModal";
+import {
+  AboutExamples,
+  AboutIntroBlocks,
+  GRAMMAR_RELATION_SECTIONS,
+  GrammarResources,
+  SentenceCard,
+} from "@/components/GrammarPointInfo";
+import type {
+  GrammarAboutBlockDTO,
+  GrammarAboutCautionDTO,
+  GrammarOfflineResourceDTO,
+  GrammarOnlineResourceDTO,
+  GrammarRelationDTO,
+} from "@/lib/grammar";
 import { STAGE_NAMES } from "@/lib/srs";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS } from "@/lib/ui";
 
@@ -13,6 +26,7 @@ interface GrammarSentence {
   bunproId: number | null;
   japanese: string;
   english: string;
+  acceptedAnswers: string[];
   audioUrl: string | null;
 }
 
@@ -26,9 +40,11 @@ interface GrammarPoint {
   register: string | null;
   wordType: string;
   caution: string;
-  aboutIntro: string;
-  aboutIntroExamples: GrammarAboutExampleDTO[];
+  aboutIntroBlocks: GrammarAboutBlockDTO[];
   aboutCautions: GrammarAboutCautionDTO[];
+  onlineResources: GrammarOnlineResourceDTO[];
+  offlineResources: GrammarOfflineResourceDTO[];
+  slug: string;
 }
 
 interface GrammarDetail {
@@ -117,8 +133,9 @@ export default function GrammarDetailPage() {
 
       {/* 2. Structure */}
       <section className="rounded-xl bg-white p-6 shadow">
-        <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <h2 className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
           Structure
+          <LegendInfoButton legend="structure" label="Structure Legend" size="sm" />
         </h2>
         <p className="text-lg" lang="ja">
           {point.structure}
@@ -133,19 +150,43 @@ export default function GrammarDetailPage() {
         <dl className="grid grid-cols-2 gap-3 text-sm">
           {point.partOfSpeech && (
             <div>
-              <dt className="text-slate-400">Part of Speech</dt>
+              <dt className="flex items-center gap-1.5 text-slate-400">
+                Part of Speech
+                <LegendInfoButton
+                  legend="part-of-speech"
+                  target={point.partOfSpeech}
+                  label="Parts of Speech Legend"
+                  size="sm"
+                />
+              </dt>
               <dd className="text-slate-700">{point.partOfSpeech}</dd>
             </div>
           )}
           {point.wordType && (
             <div>
-              <dt className="text-slate-400">Word Type</dt>
+              <dt className="flex items-center gap-1.5 text-slate-400">
+                Word Type
+                <LegendInfoButton
+                  legend="word-type"
+                  target={point.wordType}
+                  label="Word Type Legend"
+                  size="sm"
+                />
+              </dt>
               <dd className="text-slate-700">{point.wordType}</dd>
             </div>
           )}
           {point.register && (
             <div>
-              <dt className="text-slate-400">Register</dt>
+              <dt className="flex items-center gap-1.5 text-slate-400">
+                Register
+                <LegendInfoButton
+                  legend="register"
+                  target={point.register}
+                  label="Register"
+                  size="sm"
+                />
+              </dt>
               <dd className="text-slate-700">{point.register}</dd>
             </div>
           )}
@@ -158,13 +199,10 @@ export default function GrammarDetailPage() {
       </section>
 
       {/* 4. About */}
-      {(point.aboutIntro || point.aboutCautions.length > 0) && (
+      {(point.aboutIntroBlocks.length > 0 || point.aboutCautions.length > 0) && (
         <section className="rounded-xl bg-white p-6 shadow">
           <h2 className="mb-3 text-lg font-semibold">About</h2>
-          {point.aboutIntro && (
-            <p className="whitespace-pre-line leading-relaxed text-slate-700">{point.aboutIntro}</p>
-          )}
-          <AboutExamples examples={point.aboutIntroExamples} />
+          <AboutIntroBlocks blocks={point.aboutIntroBlocks} />
 
           {point.aboutCautions.map((c, i) => (
             <div key={i} className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
@@ -210,13 +248,29 @@ export default function GrammarDetailPage() {
           <h2 className="mb-3 text-lg font-semibold">Example sentences</h2>
           <div className="space-y-3">
             {sentences.map((s) => (
-              <SentenceCard key={s.id} japanese={s.japanese} english={s.english} audioUrl={s.audioUrl} />
+              <SentenceCard
+                key={s.id}
+                japanese={s.japanese}
+                english={s.english}
+                audioUrl={s.audioUrl}
+                answer={s.acceptedAnswers[0] ?? null}
+              />
             ))}
           </div>
         </section>
       )}
 
-      {/* 9. Progress chart */}
+      {/* 9. Resources (Online/Offline readings + Bunpro link) */}
+      <section className="rounded-xl bg-white p-6 shadow">
+        <h2 className="text-lg font-semibold">Resources</h2>
+        <GrammarResources
+          online={point.onlineResources}
+          offline={point.offlineResources}
+          slug={point.slug}
+        />
+      </section>
+
+      {/* 10. Progress chart */}
       <section className="rounded-xl bg-white p-6 shadow">
         <h2 className="mb-3 text-lg font-semibold">Progress</h2>
         <div className="flex gap-1">
