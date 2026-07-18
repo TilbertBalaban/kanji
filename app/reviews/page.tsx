@@ -123,6 +123,33 @@ function ReviewsSession() {
     setTimeout(() => setToast(null), 2500);
   }, []);
 
+  // Typo forgiveness: retroactively grade the last "incorrect" answer as a
+  // pass — undo the wrong count, mark the sub-question done, and submit the
+  // item if this was its last open question.
+  const markCorrect = useCallback(() => {
+    if (!items || !task || feedback !== "incorrect") return;
+    const doneKey =
+      task.kind === "meaning" ? "meaningDone" : task.kind === "reading" ? "readingDone" : "recallDone";
+    const wrongKey =
+      task.kind === "meaning" ? "meaningWrong" : task.kind === "reading" ? "readingWrong" : "recallWrong";
+    const item = items[task.index];
+    const done = { ...item, [doneKey]: true, [wrongKey]: Math.max(0, item[wrongKey] - 1) };
+    const updated = [...items];
+    updated[task.index] = done;
+    setItems(updated);
+    setSessionWrong((w) => Math.max(0, w - 1));
+    setFeedback("correct");
+    setInfoMessage(null);
+    inputRef.current?.focus();
+    if (
+      done.meaningDone &&
+      (!done.needsReading || done.readingDone) &&
+      (!done.needsRecall || done.recallDone)
+    ) {
+      if (!mistakesMode) void submitCompleted(done);
+    }
+  }, [items, task, feedback, mistakesMode, submitCompleted]);
+
   const advance = useCallback(() => {
     if (!items || !task) return;
     setFeedback("idle");
@@ -297,6 +324,13 @@ function ReviewsSession() {
               : `Meaning: ${subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}`}
           </p>
           {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}
+          <button
+            type="button"
+            onClick={markCorrect}
+            className="mt-3 rounded-lg border border-green-600 px-4 py-1.5 text-green-700 hover:bg-green-50"
+          >
+            ✓ Mark as correct
+          </button>
           {task.kind === "meaning" && (
             <div className="mt-3 border-t border-red-200 pt-3 text-left">
               <SynonymManager
