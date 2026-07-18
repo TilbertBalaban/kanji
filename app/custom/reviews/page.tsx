@@ -7,6 +7,7 @@
 // comes from browser speech synthesis, since custom words have no audio clips.
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { QuizCard, type QuizFeedback, type QuizSubject, type TaskKind } from "@/components/QuizCard";
 import { SpeechButton } from "@/components/SpeechButton";
@@ -66,6 +67,15 @@ export default function CustomReviewsPage() {
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+
+  // Show the completion summary briefly, then return to the dashboard.
+  const sessionDone = items !== null && items.length > 0 && task === null;
+  useEffect(() => {
+    if (!sessionDone) return;
+    const timer = setTimeout(() => router.push("/"), 3000);
+    return () => clearTimeout(timer);
+  }, [sessionDone, router]);
 
   useEffect(() => {
     fetch("/api/custom-vocab/reviews")
@@ -215,11 +225,12 @@ export default function CustomReviewsPage() {
         <p className="mt-2 text-slate-600">
           {completed} items reviewed · {accuracy}% first-guess accuracy
         </p>
+        <p className="mt-4 text-sm text-slate-400">Returning to the dashboard…</p>
         <Link
-          href="/custom"
-          className="mt-6 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
+          href="/"
+          className="mt-3 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
         >
-          Back to custom vocabulary
+          Back to dashboard
         </Link>
       </div>
     );

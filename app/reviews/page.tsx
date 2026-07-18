@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ItemInfoPanel } from "@/components/ItemInfoPanel";
 import { QuizCard, type QuizFeedback, type TaskKind } from "@/components/QuizCard";
@@ -68,6 +69,15 @@ function ReviewsSession() {
   // "Extra Study" over recent mistakes: same quiz UI, sourced from the mistake
   // items and — crucially — with no SRS progression on completion.
   const mistakesMode = useMistakesMode();
+  const router = useRouter();
+
+  // Show the completion summary briefly, then return to the dashboard.
+  const sessionDone = items !== null && items.length > 0 && task === null;
+  useEffect(() => {
+    if (!sessionDone) return;
+    const timer = setTimeout(() => router.push("/"), 3000);
+    return () => clearTimeout(timer);
+  }, [sessionDone, router]);
 
   useEffect(() => {
     fetch(mistakesMode ? "/api/recent-mistakes" : "/api/reviews")
@@ -256,9 +266,10 @@ function ReviewsSession() {
         {mistakesMode && (
           <p className="mt-1 text-sm text-slate-500">Extra practice only — your SRS was untouched.</p>
         )}
+        <p className="mt-4 text-sm text-slate-400">Returning to the dashboard…</p>
         <Link
           href="/"
-          className="mt-6 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
+          className="mt-3 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
         >
           Back to dashboard
         </Link>
