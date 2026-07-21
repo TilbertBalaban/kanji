@@ -1,6 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getLessonLimits } from "@/lib/progression";
+import { getLessonSettings } from "@/lib/progression";
 import { getStoredApiKey, maskApiKey } from "@/lib/wanikani-key";
 import { LessonPacingForm } from "@/components/LessonPacingForm";
 import { ProfileForm } from "@/components/ProfileForm";
@@ -11,9 +11,9 @@ export default async function ProfilePage() {
   const user = await currentUser();
   if (!user) redirect("/sign-in");
 
-  const [storedKey, lessonLimits] = await Promise.all([
+  const [storedKey, lessonSettings] = await Promise.all([
     getStoredApiKey(user.id),
-    getLessonLimits(user.id),
+    getLessonSettings(user.id),
   ]);
   const name =
     user.firstName ?? user.username ?? user.emailAddresses[0]?.emailAddress ?? "there";
@@ -31,8 +31,9 @@ export default async function ProfilePage() {
       </div>
       <ProfileForm initialKeyHint={storedKey ? maskApiKey(storedKey) : null} />
       <LessonPacingForm
-        initialDailyLessonLimit={lessonLimits.dailyLessonLimit}
-        initialGrammarDailyLessonLimit={lessonLimits.grammarDailyLessonLimit}
+        initialDailyLessonLimit={lessonSettings.dailyLessonLimit}
+        initialGrammarDailyLessonLimit={lessonSettings.grammarDailyLessonLimit}
+        initialInterleaveLessons={lessonSettings.interleaveLessons}
       />
     </div>
   );

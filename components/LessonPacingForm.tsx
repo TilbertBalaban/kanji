@@ -8,20 +8,23 @@ interface Msg {
 }
 
 // Lets the user tune how many new lessons (kanji/vocab and grammar) start per
-// day — see DEFAULT_DAILY_LESSON_LIMIT/DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT in
-// lib/progression.ts, persisted per-user on UserProgress.
+// day, and whether each batch mixes item types — see the DEFAULT_* constants
+// in lib/progression.ts, persisted per-user on UserProgress.
 
 export function LessonPacingForm({
   initialDailyLessonLimit,
   initialGrammarDailyLessonLimit,
+  initialInterleaveLessons,
 }: {
   initialDailyLessonLimit: number;
   initialGrammarDailyLessonLimit: number;
+  initialInterleaveLessons: boolean;
 }) {
   const [dailyLessonLimit, setDailyLessonLimit] = useState(String(initialDailyLessonLimit));
   const [grammarDailyLessonLimit, setGrammarDailyLessonLimit] = useState(
     String(initialGrammarDailyLessonLimit),
   );
+  const [interleaveLessons, setInterleaveLessons] = useState(initialInterleaveLessons);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<Msg | null>(null);
 
@@ -42,6 +45,7 @@ export function LessonPacingForm({
         body: JSON.stringify({
           dailyLessonLimit: daily,
           grammarDailyLessonLimit: grammar,
+          interleaveLessons,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -51,6 +55,7 @@ export function LessonPacingForm({
       }
       setDailyLessonLimit(String(data.dailyLessonLimit));
       setGrammarDailyLessonLimit(String(data.grammarDailyLessonLimit));
+      setInterleaveLessons(data.interleaveLessons);
       setMsg({ ok: true, text: "Saved" });
     } catch {
       setMsg({ ok: false, text: "Network error" });
@@ -100,6 +105,23 @@ export function LessonPacingForm({
             onChange={(e) => setGrammarDailyLessonLimit(e.target.value)}
             className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
           />
+        </div>
+        <div className="flex items-start gap-3 pt-1">
+          <input
+            id="interleave-lessons"
+            type="checkbox"
+            checked={interleaveLessons}
+            onChange={(e) => setInterleaveLessons(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+          />
+          <label htmlFor="interleave-lessons" className="text-sm text-slate-700">
+            <span className="font-medium">Interleave lessons</span>
+            <span className="mt-0.5 block text-slate-500">
+              Mix radicals, kanji and vocabulary in every batch. With this off, a
+              level&apos;s radicals all come first — level 4 has 36, so they can fill
+              several days of lessons before the first kanji.
+            </span>
+          </label>
         </div>
         <button
           type="submit"

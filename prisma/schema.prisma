@@ -139,6 +139,11 @@ model UserProgress {
   // lib/progression.ts. Configurable from /profile.
   dailyLessonLimit        Int @default(10)
   grammarDailyLessonLimit Int @default(2)
+  // Mix radicals/kanji/vocab within each lesson batch instead of serving them
+  // strictly in type order — see lib/lesson-order.ts. Mirrors WaniKani's
+  // "Interleave Lessons" setting; on by default because a radical-heavy level
+  // (level 4 ships 36) otherwise fills days of batches with radicals alone.
+  interleaveLessons       Boolean @default(true)
 }
 
 // A user's own vocabulary (words/phrases not in WaniKani), each row carrying

@@ -2,22 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
   EXTRA_LESSON_BATCH,
-  getLessonLimits,
+  getLessonSettings,
   lessonsDoneToday,
 } from "@/lib/progression";
+import { orderLessons } from "@/lib/lesson-order";
 import { relatedAnswersBySubject } from "@/lib/related-answers";
 import { toRelatedSubject, toSubjectDTO } from "@/lib/serialize";
 import { requireUserId } from "@/lib/user";
 import { synonymsBySubject } from "@/lib/synonyms";
 
 export const dynamic = "force-dynamic";
-
-const TYPE_ORDER: Record<string, number> = {
-  radical: 0,
-  kanji: 1,
-  vocabulary: 2,
-  kana_vocabulary: 2,
-};
 
 export async function GET(req: NextRequest) {
   const { userId, response } = await requireUserId();
@@ -28,34 +22,24 @@ export async function GET(req: NextRequest) {
   // ?extra=1 bypasses the daily limit for one opt-in batch of EXTRA_LESSON_BATCH
   const extra = req.nextUrl.searchParams.get("extra") === "1";
 
-  const [assignments, doneToday, { dailyLessonLimit }] = await Promise.all([
-    prisma.assignment.findMany({
-      where: { userId, startedAt: null, unlockedAt: { not: null } },
-      select: {
-        subjectId: true,
-        subject: { select: { level: true, type: true, lessonPosition: true } },
-      },
-    }),
-    lessonsDoneToday(userId),
-    getLessonLimits(userId),
-  ]);
+  const [assignments, doneToday, { dailyLessonLimit, interleaveLessons }] =
+    await Promise.all([
+      prisma.assignment.findMany({
+        where: { userId, startedAt: null, unlockedAt: { not: null } },
+        select: {
+          subjectId: true,
+          subject: { select: { level: true, type: true, lessonPosition: true } },
+        },
+      }),
+      lessonsDoneToday(userId),
+      getLessonSettings(userId),
+    ]);
 
   const remainingToday = Math.max(0, dailyLessonLimit - doneToday);
   const batch = extra ? EXTRA_LESSON_BATCH : Math.min(limit, remainingToday);
 
-  // WaniKani default order: level asc, then radicals → kanji → vocab,
-  // then lesson_position.
-  assignments.sort((a, b) => {
-    const sa = a.subject;
-    const sb = b.subject;
-    return (
-      sa.level - sb.level ||
-      TYPE_ORDER[sa.type] - TYPE_ORDER[sb.type] ||
-      sa.lessonPosition - sb.lessonPosition
-    );
-  });
-
-  const batchIds = assignments.slice(0, batch).map((a) => a.subjectId);
+  const ordered = orderLessons(assignments, interleaveLessons);
+  const batchIds = ordered.slice(0, batch).map((a) => a.subjectId);
   const [batchSubjects, synonyms] = await Promise.all([
     batchIds.length
       ? prisma.subject.findMany({ where: { id: { in: batchIds } } })

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { recentMistakeSubjectIds } from "@/lib/mistakes";
 import {
   getCurrentLevel,
-  getLessonLimits,
+  getLessonSettings,
   grammarLessonsDoneToday,
   lessonsDoneToday,
   reviewsDueBefore,
@@ -90,7 +90,7 @@ export async function GET() {
         where: { userId, availableAt: { gt: now, lte: in24h } },
         select: { availableAt: true },
       }),
-      getLessonLimits(userId),
+      getLessonSettings(userId),
     ]);
 
   const spread = Array.from({ length: 8 }, (_, i) => ({

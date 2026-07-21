@@ -15,42 +15,65 @@ const LEVEL_UP_THRESHOLD = 0.9; // pass 90% of a level's kanji to level up
 export const EXTRA_LESSON_BATCH = 5; // opt-in batch size once the daily limit is reached
 
 // Defaults live on UserProgress (dailyLessonLimit/grammarDailyLessonLimit) so
-// each user can tune their own pace from /profile — see getLessonLimits.
-export const DEFAULT_DAILY_LESSON_LIMIT = 10;
-export const DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT = 2;
+// each user can tune their own pace from /profile — see getLessonSettings.
+const DEFAULT_DAILY_LESSON_LIMIT = 10;
+const DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT = 2;
+const DEFAULT_INTERLEAVE_LESSONS = true;
 
 const MIN_LESSON_LIMIT = 1;
 const MAX_LESSON_LIMIT = 200;
 
-/** The user's configured daily lesson caps, defaulting a missing row to the constants above. */
-export async function getLessonLimits(
+const LIMIT_KEYS = ["dailyLessonLimit", "grammarDailyLessonLimit"] as const;
+
+export interface LessonSettings {
+  dailyLessonLimit: number;
+  grammarDailyLessonLimit: number;
+  interleaveLessons: boolean;
+}
+
+/** The user's lesson pacing and ordering, defaulting a missing row to the constants above. */
+export async function getLessonSettings(
   userId: string,
-): Promise<{ dailyLessonLimit: number; grammarDailyLessonLimit: number }> {
+): Promise<LessonSettings> {
   const progress = await prisma.userProgress.findUnique({
     where: { userId },
-    select: { dailyLessonLimit: true, grammarDailyLessonLimit: true },
+    select: {
+      dailyLessonLimit: true,
+      grammarDailyLessonLimit: true,
+      interleaveLessons: true,
+    },
   });
   return {
     dailyLessonLimit: progress?.dailyLessonLimit ?? DEFAULT_DAILY_LESSON_LIMIT,
-    grammarDailyLessonLimit: progress?.grammarDailyLessonLimit ?? DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT,
+    grammarDailyLessonLimit:
+      progress?.grammarDailyLessonLimit ?? DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT,
+    interleaveLessons:
+      progress?.interleaveLessons ?? DEFAULT_INTERLEAVE_LESSONS,
   };
 }
 
-/** Update one or both daily lesson caps; each must be an integer in [1, 200]. */
-export async function setLessonLimits(
+/** Update any subset of the lesson settings; each cap must be an integer in [1, 200]. */
+export async function setLessonSettings(
   userId: string,
-  limits: { dailyLessonLimit?: number; grammarDailyLessonLimit?: number },
+  settings: Partial<LessonSettings>,
 ) {
-  const data: { dailyLessonLimit?: number; grammarDailyLessonLimit?: number } = {};
-  for (const [key, value] of Object.entries(limits) as [
-    "dailyLessonLimit" | "grammarDailyLessonLimit",
-    number | undefined,
-  ][]) {
+  const data: Partial<LessonSettings> = {};
+  for (const key of LIMIT_KEYS) {
+    const value = settings[key];
     if (value === undefined) continue;
-    if (!Number.isInteger(value) || value < MIN_LESSON_LIMIT || value > MAX_LESSON_LIMIT) {
-      throw new Error(`${key} must be an integer between ${MIN_LESSON_LIMIT} and ${MAX_LESSON_LIMIT}`);
+    if (
+      !Number.isInteger(value) ||
+      value < MIN_LESSON_LIMIT ||
+      value > MAX_LESSON_LIMIT
+    ) {
+      throw new Error(
+        `${key} must be an integer between ${MIN_LESSON_LIMIT} and ${MAX_LESSON_LIMIT}`,
+      );
     }
     data[key] = value;
+  }
+  if (settings.interleaveLessons !== undefined) {
+    data.interleaveLessons = settings.interleaveLessons;
   }
   if (Object.keys(data).length === 0) return;
   await prisma.userProgress.update({ where: { userId }, data });
@@ -78,7 +101,11 @@ export async function ensureUserInitialized(userId: string) {
   });
   const now = new Date();
   await prisma.assignment.createMany({
-    data: level1Radicals.map((r) => ({ userId, subjectId: r.id, unlockedAt: now })),
+    data: level1Radicals.map((r) => ({
+      userId,
+      subjectId: r.id,
+      unlockedAt: now,
+    })),
     skipDuplicates: true,
   });
 }
@@ -116,7 +143,8 @@ function startOfToday(now = new Date()): Date {
     second: "2-digit",
     hour12: false,
   }).formatToParts(now);
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value ?? 0);
   const msIntoDay =
     (((get("hour") % 24) * 60 + get("minute")) * 60 + get("second")) * 1000 +
     now.getMilliseconds();
@@ -131,7 +159,10 @@ function startOfToday(now = new Date()): Date {
  * looking at the queue does not restart the clock). Every endpoint that
  * serves or counts due reviews must filter with this bound.
  */
-export async function reviewsDueBefore(userId: string, now: Date = new Date()): Promise<Date> {
+export async function reviewsDueBefore(
+  userId: string,
+  now: Date = new Date(),
+): Promise<Date> {
   const progress = await prisma.userProgress.findUnique({ where: { userId } });
   if (!progress) return now;
   const cutoff = new Date(
@@ -220,7 +251,8 @@ export async function completeReview(
   const readingCorrectCount = tasks.reading ? 1 : 0;
   const recallCorrectCount = tasks.recall ? 1 : 0;
 
-  const incorrect = meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
+  const incorrect =
+    meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
   const startingStage = assignment.srsStage;
   const endingStage = nextStage(startingStage, incorrect);
   const justPassed = endingStage >= GURU_STAGE && !assignment.passedAt;
@@ -285,7 +317,8 @@ export async function completeCustomVocabReview(
     throw new Error(`Review is not due for custom vocab item ${id}`);
   }
 
-  const incorrect = meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
+  const incorrect =
+    meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
   const startingStage = item.srsStage;
   const endingStage = nextStage(startingStage, incorrect);
   const justPassed = endingStage >= GURU_STAGE && !item.passedAt;
@@ -316,7 +349,9 @@ async function unlockEligible(
 ): Promise<number[]> {
   if (candidates.length === 0) return [];
   const candidateIds = candidates.map((c) => c.id);
-  const allComponentIds = [...new Set(candidates.flatMap((c) => c.componentIds))];
+  const allComponentIds = [
+    ...new Set(candidates.flatMap((c) => c.componentIds)),
+  ];
 
   const [existing, passed] = await Promise.all([
     prisma.assignment.findMany({
@@ -325,7 +360,11 @@ async function unlockEligible(
     }),
     allComponentIds.length
       ? prisma.assignment.findMany({
-          where: { userId, subjectId: { in: allComponentIds }, passedAt: { not: null } },
+          where: {
+            userId,
+            subjectId: { in: allComponentIds },
+            passedAt: { not: null },
+          },
           select: { subjectId: true },
         })
       : Promise.resolve([]),
@@ -335,13 +374,19 @@ async function unlockEligible(
 
   const unlocked = candidates
     .filter((c) => !existingIds.has(c.id))
-    .filter((c) => c.alwaysUnlock || c.componentIds.every((id) => passedIds.has(id)))
+    .filter(
+      (c) => c.alwaysUnlock || c.componentIds.every((id) => passedIds.has(id)),
+    )
     .map((c) => c.id);
 
   if (unlocked.length > 0) {
     const now = new Date();
     await prisma.assignment.createMany({
-      data: unlocked.map((subjectId) => ({ userId, subjectId, unlockedAt: now })),
+      data: unlocked.map((subjectId) => ({
+        userId,
+        subjectId,
+        unlockedAt: now,
+      })),
       skipDuplicates: true,
     });
   }
@@ -349,8 +394,13 @@ async function unlockEligible(
 }
 
 /** Unlock subjects that use this one as a component, once all components passed. */
-async function unlockAmalgamations(userId: string, subjectId: number): Promise<number[]> {
-  const subject = await prisma.subject.findUniqueOrThrow({ where: { id: subjectId } });
+async function unlockAmalgamations(
+  userId: string,
+  subjectId: number,
+): Promise<number[]> {
+  const subject = await prisma.subject.findUniqueOrThrow({
+    where: { id: subjectId },
+  });
   const amalgamationIds: number[] = JSON.parse(subject.amalgamationIds);
   if (amalgamationIds.length === 0) return [];
 
@@ -361,7 +411,10 @@ async function unlockAmalgamations(userId: string, subjectId: number): Promise<n
   });
   return unlockEligible(
     userId,
-    candidates.map((c) => ({ id: c.id, componentIds: JSON.parse(c.componentIds) })),
+    candidates.map((c) => ({
+      id: c.id,
+      componentIds: JSON.parse(c.componentIds),
+    })),
   );
 }
 
@@ -376,7 +429,11 @@ async function maybeLevelUp(userId: string): Promise<number | null> {
   if (kanji.length === 0) return null;
 
   const passed = await prisma.assignment.count({
-    where: { userId, subjectId: { in: kanji.map((k) => k.id) }, passedAt: { not: null } },
+    where: {
+      userId,
+      subjectId: { in: kanji.map((k) => k.id) },
+      passedAt: { not: null },
+    },
   });
   if (passed / kanji.length < LEVEL_UP_THRESHOLD) return null;
 
@@ -413,7 +470,7 @@ export async function unlockLevel(userId: string, level: number) {
  */
 export async function startLessons(userId: string, subjectIds: number[]) {
   const [{ dailyLessonLimit }, doneToday] = await Promise.all([
-    getLessonLimits(userId),
+    getLessonSettings(userId),
     lessonsDoneToday(userId),
   ]);
   const remainingToday = Math.max(0, dailyLessonLimit - doneToday);
@@ -463,8 +520,11 @@ export async function completeGrammarReview(
   const endingStage = nextStage(startingStage, incorrectCount);
   const justPassed = endingStage >= GURU_STAGE && !progress.passedAt;
 
-  const sentenceCount = await prisma.grammarSentence.count({ where: { grammarPointId } });
-  const nextCursor = sentenceCount > 0 ? (progress.sentenceCursor + 1) % sentenceCount : 0;
+  const sentenceCount = await prisma.grammarSentence.count({
+    where: { grammarPointId },
+  });
+  const nextCursor =
+    sentenceCount > 0 ? (progress.sentenceCursor + 1) % sentenceCount : 0;
 
   await markActivity(userId, now);
 
@@ -504,9 +564,12 @@ export async function completeGrammarReview(
  * batch) — a hand-crafted request can't skip ahead or start the whole
  * catalog, and unknown ids never reach createMany's FK.
  */
-export async function startGrammarLessons(userId: string, grammarPointIds: number[]) {
+export async function startGrammarLessons(
+  userId: string,
+  grammarPointIds: number[],
+) {
   const [{ grammarDailyLessonLimit }, doneToday] = await Promise.all([
-    getLessonLimits(userId),
+    getLessonSettings(userId),
     grammarLessonsDoneToday(userId),
   ]);
   const remainingToday = Math.max(0, grammarDailyLessonLimit - doneToday);

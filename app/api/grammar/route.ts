@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getLessonLimits, grammarLessonsDoneToday, reviewsDueBefore } from "@/lib/progression";
+import { getLessonSettings, grammarLessonsDoneToday, reviewsDueBefore } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export async function GET() {
       }),
       prisma.grammarPoint.count({ where: { progress: { none: { userId } } } }),
       grammarLessonsDoneToday(userId),
-      getLessonLimits(userId),
+      getLessonSettings(userId),
     ]);
   const progressByPoint = new Map(progressRows.map((p) => [p.grammarPointId, p]));
 
