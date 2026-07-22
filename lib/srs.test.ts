@@ -5,10 +5,45 @@ import {
   inactivityShiftMs,
   nextAvailableAt,
   nextStage,
+  tasksForSubject,
   type AuxMeaning,
   type Meaning,
   type Reading,
 } from "./srs";
+
+const accepted = (reading: string): Pick<Reading, "acceptedAnswer">[] => [
+  { reading, primary: true, acceptedAnswer: true } as Reading,
+];
+
+describe("tasksForSubject", () => {
+  it("asks meaning + reading + recall for vocabulary with a reading", () => {
+    expect(tasksForSubject({ type: "vocabulary", readings: accepted("くるま") })).toEqual({
+      reading: true,
+      recall: true,
+    });
+  });
+
+  it("asks recall but not reading for kana_vocabulary (no reading to type)", () => {
+    expect(tasksForSubject({ type: "kana_vocabulary", readings: [] })).toEqual({
+      reading: false,
+      recall: true,
+    });
+  });
+
+  it("asks reading but not recall for kanji", () => {
+    expect(tasksForSubject({ type: "kanji", readings: accepted("こう") })).toEqual({
+      reading: true,
+      recall: false,
+    });
+  });
+
+  it("asks meaning only for radicals", () => {
+    expect(tasksForSubject({ type: "radical", readings: [] })).toEqual({
+      reading: false,
+      recall: false,
+    });
+  });
+});
 
 describe("nextStage", () => {
   it("advances one stage on a correct answer", () => {

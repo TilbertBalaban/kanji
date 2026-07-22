@@ -248,6 +248,37 @@ describe("evaluateAnswer — recall shakes", () => {
   });
 });
 
+describe("evaluateAnswer — kana_vocabulary recall", () => {
+  // kana_vocabulary ships no readings; the kana word is graded from characters.
+  const kanaVocab = subject({
+    type: "kana_vocabulary",
+    characters: "おはよう",
+    meanings: [meaning("Good Morning", true, true)],
+    readings: [],
+  });
+
+  it("passes the kana word typed on a recall prompt", () => {
+    expect(
+      evaluateAnswer({ questionType: "reading", recall: true, response: "おはよう", subject: kanaVocab })
+        .action,
+    ).toBe("pass");
+  });
+
+  it("accepts katakana input against the kana characters", () => {
+    expect(
+      evaluateAnswer({ questionType: "reading", recall: true, response: "オハヨウ", subject: kanaVocab })
+        .action,
+    ).toBe("pass");
+  });
+
+  it("fails a wrong kana word on a recall prompt", () => {
+    expect(
+      evaluateAnswer({ questionType: "reading", recall: true, response: "こんにちは", subject: kanaVocab })
+        .action,
+    ).toBe("fail");
+  });
+});
+
 describe("evaluateAnswer — meaning shakes", () => {
   const vocab = subject({
     characters: "車",

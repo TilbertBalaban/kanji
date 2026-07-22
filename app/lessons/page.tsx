@@ -551,7 +551,8 @@ function LessonsSession() {
         <p className="mt-3 text-center text-sm text-red-600">
           Not quite —{" "}
           {wantsKana
-            ? task.subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ")
+            ? task.subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ") ||
+              task.subject.characters
             : task.subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}
           . Press Enter; it will come around again.
         </p>

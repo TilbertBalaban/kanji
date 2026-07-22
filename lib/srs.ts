@@ -38,11 +38,13 @@ export function isVocabulary(type: string): boolean {
 
 /**
  * Which prompts a review or lesson quiz asks for a subject: meaning always,
- * reading unless radical, recall (English → reading) for vocabulary — the
- * latter two only when the subject actually has an accepted reading
- * (kana_vocabulary ships none). The single source of truth shared by the quiz
- * pages and completeReview, so logged answer counts always match the prompts
- * that were asked.
+ * reading unless radical (and only when there's an accepted reading to type),
+ * recall (English → reading) for vocabulary. kana_vocabulary ships no readings
+ * — the kana word is its own reading — so it gets no reading prompt (typing the
+ * word back is pointless) but still gets recall, graded against its characters
+ * (see readingsForRecall in answer-checker). The single source of truth shared
+ * by the quiz pages and completeReview, so logged answer counts always match
+ * the prompts that were asked.
  */
 export function tasksForSubject(subject: {
   type: string;
@@ -51,7 +53,7 @@ export function tasksForSubject(subject: {
   const hasReading = subject.readings.some((r) => r.acceptedAnswer);
   return {
     reading: subject.type !== "radical" && hasReading,
-    recall: isVocabulary(subject.type) && hasReading,
+    recall: isVocabulary(subject.type) && (hasReading || subject.type === "kana_vocabulary"),
   };
 }
 

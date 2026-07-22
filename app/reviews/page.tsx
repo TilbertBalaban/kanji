@@ -334,7 +334,7 @@ function ReviewsSession() {
           <p className="font-medium text-red-700">Incorrect — press Enter to continue.</p>
           <p className="mt-1 text-slate-600">
             {wantsKana
-              ? `Reading: ${subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ")}`
+              ? `Reading: ${subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ") || subject.characters}`
               : `Meaning: ${subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning).join(", ")}`}
           </p>
           {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}

@@ -88,6 +88,19 @@ function visibleReadings(subject: CheckableSubject): string[] {
   return subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading);
 }
 
+/**
+ * Readings to grade a reading/recall answer against. kana_vocabulary ships no
+ * readings — the kana word itself is the reading — so a recall prompt (English
+ * → the word) is checked against its characters.
+ */
+function readingsForRecall(subject: CheckableSubject): Reading[] {
+  if (subject.readings.some((r) => r.acceptedAnswer)) return subject.readings;
+  if (subject.type === "kana_vocabulary" && subject.characters) {
+    return [{ reading: subject.characters, primary: true, acceptedAnswer: true }];
+  }
+  return subject.readings;
+}
+
 // WaniKani's toIME: kana → the romaji keystrokes that produce it (ん = "nn").
 const SMALL_KANA_SUFFIX = ["ゃ", "ゅ", "ょ", "ャ", "ュ", "ョ"];
 const SMALL_KANA_PREFIX = ["っ", "ッ"];
@@ -552,7 +565,7 @@ export function evaluateAnswer({
   const result =
     questionType === "meaning"
       ? checkMeaning(response, subject.meanings, subject.auxMeanings, userSynonyms)
-      : checkReading(response, subject.readings);
+      : checkReading(response, readingsForRecall(subject));
 
   const blocked =
     questionType === "meaning" &&
