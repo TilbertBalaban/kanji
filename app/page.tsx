@@ -96,7 +96,8 @@ export default function Dashboard() {
             <div className="text-4xl font-bold">{summary.grammarLessonsAvailableToday}</div>
             <div className="mt-1 text-white opacity-90">Grammar lessons available today</div>
           </Link>
-          {summary.grammarLessonCount > summary.grammarLessonsAvailableToday && (
+          {summary.grammarLessonCount > summary.grammarLessonsAvailableToday &&
+            summary.lessonCount === 0 && (
             <Link
               href="/grammar/lessons?extra=1"
               className="mt-2 inline-block text-sm font-medium text-white underline decoration-white/50 underline-offset-2 hover:decoration-white"
