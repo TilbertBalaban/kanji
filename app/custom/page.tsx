@@ -102,6 +102,16 @@ export default function CustomVocabPage() {
     [editingId, resetForm],
   );
 
+  const handleReset = useCallback(async (item: CustomVocabDTO) => {
+    if (!confirm(`Reset “${item.characters}” back to Apprentice I?`)) return;
+    const res = await fetch(`/api/custom-vocab/${item.id}/reset`, { method: "POST" });
+    if (!res.ok) return;
+    const fresh = await fetch("/api/custom-vocab")
+      .then((r) => r.json())
+      .catch(() => null);
+    if (fresh) setItems(fresh.items);
+  }, []);
+
   if (!items) return <p className="text-slate-500">Loading custom vocabulary…</p>;
 
   return (
@@ -274,6 +284,13 @@ export default function CustomVocabPage() {
                   className="text-sm text-sky-600 hover:underline"
                 >
                   Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleReset(item)}
+                  className="text-sm text-slate-400 hover:text-slate-600 hover:underline"
+                >
+                  Reset
                 </button>
                 <button
                   type="button"

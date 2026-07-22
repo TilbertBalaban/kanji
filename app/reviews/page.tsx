@@ -127,8 +127,11 @@ function ReviewsSession() {
       setToast({ text: `Level up! You reached level ${result.leveledUpTo} 🎉`, kind: "levelup" });
     } else if (result.endingStage > result.startingStage) {
       setToast({ text: `↑ ${STAGE_NAMES[result.endingStage]}`, kind: "up" });
-    } else {
+    } else if (result.endingStage < result.startingStage) {
       setToast({ text: `↓ ${STAGE_NAMES[result.endingStage]}`, kind: "down" });
+    } else {
+      // Burned-recall completion: stage never changes.
+      setToast({ text: "Recall check complete", kind: "up" });
     }
     setTimeout(() => setToast(null), 2500);
   }, []);

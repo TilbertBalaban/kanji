@@ -74,6 +74,20 @@ export function nextAvailableAt(stage: number, from: Date = new Date()): Date | 
   return new Date(from.getTime() + hours * 3600_000);
 }
 
+// Burned items are otherwise never reviewed again (nextAvailableAt returns
+// null for BURNED_STAGE). To keep them from fading entirely, a lightweight
+// "recall check" reuses the normal review UI but doesn't touch srsStage,
+// burnedAt, passedAt, or any ReviewLog — see completeReview et al. in
+// lib/progression.ts. Correct answers push the next check out 2 months;
+// a miss brings it back much sooner.
+export const BURNED_RECALL_INTERVAL_DAYS = 60;
+export const BURNED_RECALL_RETRY_DAYS = 3;
+
+export function nextBurnedRecallAt(incorrect: number, from: Date = new Date()): Date {
+  const days = incorrect === 0 ? BURNED_RECALL_INTERVAL_DAYS : BURNED_RECALL_RETRY_DAYS;
+  return new Date(from.getTime() + days * 24 * 3600_000);
+}
+
 // Reviews stop accumulating this long after the user's last review/lesson
 // activity: anything that would come due later is pushed forward instead,
 // so a returning user never faces more than this window's backlog.

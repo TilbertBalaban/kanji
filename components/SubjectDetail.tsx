@@ -6,6 +6,7 @@ import { ReadingColumns } from "@/components/ItemInfoPanel";
 import { MnemonicText, renderMarkup } from "@/components/MnemonicText";
 import { NoteEditor } from "@/components/NoteEditor";
 import { ReadingAudio } from "@/components/ReadingAudio";
+import { ResetProgressButton } from "@/components/ResetProgressButton";
 import { SubjectChar } from "@/components/SubjectChar";
 import { SynonymManager } from "@/components/SynonymManager";
 import { answerCounts, type AccuracyLog } from "@/lib/accuracy";
@@ -178,9 +179,7 @@ export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
   const [detail, setDetail] = useState<SubjectDetailData | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  useEffect(() => {
-    setDetail(null);
-    setNotFound(false);
+  const load = () => {
     // The route param may reach a client component already URL-encoded (e.g.
     // "%E4%B8%83" for 七), so decode first and encode exactly once — encoding a
     // raw kanji straight away would double-encode it and 404 the lookup.
@@ -190,10 +189,16 @@ export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
     } catch {
       // slug wasn't valid percent-encoding; use it as-is.
     }
-    fetch(`/api/subjects/by/${kind}/${encodeURIComponent(key)}`).then(async (r) => {
+    return fetch(`/api/subjects/by/${kind}/${encodeURIComponent(key)}`).then(async (r) => {
       if (!r.ok) return setNotFound(true);
       setDetail(await r.json());
     });
+  };
+
+  useEffect(() => {
+    setDetail(null);
+    setNotFound(false);
+    load();
   }, [kind, slug]);
 
   if (notFound) return <p className="text-slate-500">Subject not found.</p>;
@@ -241,6 +246,14 @@ export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
             </span>
           )}
         </div>
+        {stage !== null && stage > 0 && (
+          <div className="flex justify-end bg-white px-4 py-2">
+            <ResetProgressButton
+              resetUrl={`/api/subjects/${subject.id}/reset`}
+              onReset={load}
+            />
+          </div>
+        )}
       </div>
 
       <RadicalCombination items={components} />

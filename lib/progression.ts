@@ -6,6 +6,7 @@ import {
   MAX_LEVEL,
   inactivityShiftMs,
   nextAvailableAt,
+  nextBurnedRecallAt,
   nextStage,
   tasksForSubject,
 } from "./srs";
@@ -241,6 +242,24 @@ export async function completeReview(
     throw new Error(`Review is not due for subject ${subjectId}`);
   }
 
+  // Burned items get a periodic recall check instead of a graded review: it
+  // reschedules the next check but never touches stage/burnedAt/ReviewLog.
+  if (assignment.srsStage === BURNED_STAGE) {
+    const incorrect =
+      meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
+    await markActivity(userId, now);
+    await prisma.assignment.update({
+      where: { userId_subjectId: { userId, subjectId } },
+      data: { availableAt: nextBurnedRecallAt(incorrect, now) },
+    });
+    return {
+      startingStage: BURNED_STAGE,
+      endingStage: BURNED_STAGE,
+      unlockedIds: [],
+      leveledUpTo: null,
+    };
+  }
+
   // One correct answer per prompt the review actually asked (see
   // tasksForSubject — the same rule drives the quiz UI).
   const tasks = tasksForSubject({
@@ -264,7 +283,10 @@ export async function completeReview(
       where: { userId_subjectId: { userId, subjectId } },
       data: {
         srsStage: endingStage,
-        availableAt: nextAvailableAt(endingStage, now),
+        availableAt:
+          endingStage === BURNED_STAGE
+            ? nextBurnedRecallAt(0, now)
+            : nextAvailableAt(endingStage, now),
         passedAt: justPassed ? now : assignment.passedAt,
         burnedAt: endingStage === BURNED_STAGE ? now : null,
       },
@@ -296,6 +318,24 @@ export async function completeReview(
 }
 
 /**
+ * Send an assignment back to "lesson not taken" (stage 0): clears
+ * startedAt/availableAt/passedAt/burnedAt but leaves unlockedAt alone, so it
+ * reappears in the lesson queue (startLessons matches on `startedAt: null`)
+ * rather than needing to re-unlock through its components. Past ReviewLog
+ * rows are untouched — they're historical, not derived from current state.
+ */
+export async function resetAssignment(userId: string, subjectId: number) {
+  const assignment = await prisma.assignment.findUnique({
+    where: { userId_subjectId: { userId, subjectId } },
+  });
+  if (!assignment) throw new Error(`No assignment for subject ${subjectId}`);
+  await prisma.assignment.update({
+    where: { userId_subjectId: { userId, subjectId } },
+    data: { srsStage: 0, startedAt: null, availableAt: null, passedAt: null, burnedAt: null },
+  });
+}
+
+/**
  * Apply a finished review to a custom-vocab item: same stage math as
  * completeReview, but on the item's embedded SRS state — no review log, no
  * unlock cascade, no level-up. Rejects items that aren't due, so a replayed
@@ -319,6 +359,16 @@ export async function completeCustomVocabReview(
 
   const incorrect =
     meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
+
+  if (item.srsStage === BURNED_STAGE) {
+    await markActivity(userId, now);
+    await prisma.customVocab.update({
+      where: { id },
+      data: { availableAt: nextBurnedRecallAt(incorrect, now) },
+    });
+    return { startingStage: BURNED_STAGE, endingStage: BURNED_STAGE };
+  }
+
   const startingStage = item.srsStage;
   const endingStage = nextStage(startingStage, incorrect);
   const justPassed = endingStage >= GURU_STAGE && !item.passedAt;
@@ -329,13 +379,39 @@ export async function completeCustomVocabReview(
     where: { id },
     data: {
       srsStage: endingStage,
-      availableAt: nextAvailableAt(endingStage, now),
+      availableAt:
+        endingStage === BURNED_STAGE
+          ? nextBurnedRecallAt(0, now)
+          : nextAvailableAt(endingStage, now),
       passedAt: justPassed ? now : item.passedAt,
       burnedAt: endingStage === BURNED_STAGE ? now : null,
     },
   });
 
   return { startingStage, endingStage };
+}
+
+/**
+ * Restart a custom-vocab item's SRS clock as if it were freshly added: back
+ * to Apprentice I, due on the normal stage-1 interval. Unlike Assignment,
+ * CustomVocab has no separate lesson step (creation already puts it at stage
+ * 1), so there's no "lesson queue" to re-enter — this just re-arms review.
+ */
+export async function resetCustomVocab(userId: string, id: number) {
+  const item = await prisma.customVocab.findUnique({ where: { id } });
+  if (!item || item.userId !== userId) {
+    throw new Error(`No custom vocab item ${id}`);
+  }
+  const now = new Date();
+  await prisma.customVocab.update({
+    where: { id },
+    data: {
+      srsStage: 1,
+      availableAt: nextAvailableAt(1, now),
+      passedAt: null,
+      burnedAt: null,
+    },
+  });
 }
 
 /**
@@ -516,15 +592,27 @@ export async function completeGrammarReview(
     throw new Error(`Review is not due for grammar point ${grammarPointId}`);
   }
 
-  const startingStage = progress.srsStage;
-  const endingStage = nextStage(startingStage, incorrectCount);
-  const justPassed = endingStage >= GURU_STAGE && !progress.passedAt;
-
   const sentenceCount = await prisma.grammarSentence.count({
     where: { grammarPointId },
   });
   const nextCursor =
     sentenceCount > 0 ? (progress.sentenceCursor + 1) % sentenceCount : 0;
+
+  if (progress.srsStage === BURNED_STAGE) {
+    await markActivity(userId, now);
+    await prisma.grammarProgress.update({
+      where: { userId_grammarPointId: { userId, grammarPointId } },
+      data: {
+        availableAt: nextBurnedRecallAt(incorrectCount, now),
+        sentenceCursor: nextCursor,
+      },
+    });
+    return { startingStage: BURNED_STAGE, endingStage: BURNED_STAGE };
+  }
+
+  const startingStage = progress.srsStage;
+  const endingStage = nextStage(startingStage, incorrectCount);
+  const justPassed = endingStage >= GURU_STAGE && !progress.passedAt;
 
   await markActivity(userId, now);
 
@@ -533,7 +621,10 @@ export async function completeGrammarReview(
       where: { userId_grammarPointId: { userId, grammarPointId } },
       data: {
         srsStage: endingStage,
-        availableAt: nextAvailableAt(endingStage, now),
+        availableAt:
+          endingStage === BURNED_STAGE
+            ? nextBurnedRecallAt(0, now)
+            : nextAvailableAt(endingStage, now),
         passedAt: justPassed ? now : progress.passedAt,
         burnedAt: endingStage === BURNED_STAGE ? now : null,
         sentenceCursor: nextCursor,
@@ -552,6 +643,17 @@ export async function completeGrammarReview(
   ]);
 
   return { startingStage, endingStage };
+}
+
+/**
+ * Reset a grammar point's progress by deleting its GrammarProgress row
+ * outright: startGrammarLessons' eligibility check is `progress: { none: {
+ * userId } }`, so the row must not exist for the point to reappear in the
+ * lesson queue. Past GrammarReviewLog rows key off grammarPointId, not this
+ * row, so history survives the delete.
+ */
+export async function resetGrammarProgress(userId: string, grammarPointId: number) {
+  await prisma.grammarProgress.deleteMany({ where: { userId, grammarPointId } });
 }
 
 /**

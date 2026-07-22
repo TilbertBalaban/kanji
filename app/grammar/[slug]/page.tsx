@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LegendInfoButton } from "@/components/GrammarLegendModal";
+import { ResetProgressButton } from "@/components/ResetProgressButton";
 import {
   AboutExamples,
   AboutIntroBlocks,
@@ -61,7 +62,7 @@ export default function GrammarDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [data, setData] = useState<GrammarDetail | null | "not-found">(null);
 
-  useEffect(() => {
+  const load = () => {
     // The route param may reach a client component already URL-encoded (see
     // components/SubjectDetail.tsx), so decode first and encode exactly once —
     // Bunpro slugs aren't guaranteed ASCII-safe.
@@ -71,13 +72,17 @@ export default function GrammarDetailPage() {
     } catch {
       // slug wasn't valid percent-encoding; use it as-is.
     }
-    fetch(`/api/grammar/${encodeURIComponent(key)}`).then((r) => {
+    return fetch(`/api/grammar/${encodeURIComponent(key)}`).then((r) => {
       if (r.status === 404) {
         setData("not-found");
         return;
       }
       r.json().then(setData);
     });
+  };
+
+  useEffect(() => {
+    load();
   }, [slug]);
 
   if (data === null) return <p className="text-slate-500">Loading…</p>;
@@ -120,6 +125,12 @@ export default function GrammarDetailPage() {
             >
               {srsStage === null ? "Not started" : STAGE_NAMES[srsStage]}
             </span>
+            {srsStage !== null && srsStage > 0 && (
+              <ResetProgressButton
+                resetUrl={`/api/grammar/${encodeURIComponent(slug)}/reset`}
+                onReset={load}
+              />
+            )}
           </div>
 
           {point.caution && (
