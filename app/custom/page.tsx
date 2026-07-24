@@ -6,6 +6,7 @@ import * as wanakana from "wanakana";
 import { SpeechButton } from "@/components/SpeechButton";
 import type { CustomVocabDTO } from "@/lib/custom-vocab";
 import { STAGE_NAMES } from "@/lib/srs";
+import { japaneseReading, type TranslateLang, type TranslateResult } from "@/lib/translate";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS } from "@/lib/ui";
 
 interface FormState {
@@ -16,6 +17,15 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = { characters: "", readings: "", meanings: "", notes: "" };
+
+// What the translate helper's text box holds. Rōmaji is converted to hiragana
+// locally; English/Ukrainian are translated into Japanese.
+type InputType = "romaji" | "en" | "uk";
+const INPUT_TYPES: { key: InputType; label: string; placeholder: string }[] = [
+  { key: "romaji", label: "Rōmaji", placeholder: "konbanwa" },
+  { key: "en", label: "English", placeholder: "good evening" },
+  { key: "uk", label: "Українська", placeholder: "добрий вечір" },
+];
 
 function toForm(item: CustomVocabDTO): FormState {
   return {
@@ -46,7 +56,14 @@ export default function CustomVocabPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [helperText, setHelperText] = useState("");
+  const [inputType, setInputType] = useState<InputType>("romaji");
+  const [translating, setTranslating] = useState(false);
+  const [helperError, setHelperError] = useState<string | null>(null);
   const charactersRef = useRef<HTMLInputElement>(null);
+  // The meaning the translate helper last filled in — so re-translating can
+  // refresh it, while a meaning you typed or edited yourself is left alone.
+  const lastAutoMeaningRef = useRef("");
 
   useEffect(() => {
     fetch("/api/custom-vocab")
@@ -90,6 +107,105 @@ export default function CustomVocabPage() {
     resetForm();
     charactersRef.current?.focus();
   }, [form, editingId, resetForm]);
+
+  // Google Translate helper: fill the Japanese / reading / meaning fields from
+  // the text box, according to the selected input type.
+  const handleTranslate = useCallback(async () => {
+    const text = helperText.trim();
+    if (!text) return;
+    setTranslating(true);
+    setHelperError(null);
+
+    const translate = async (payload: { text: string; from: TranslateLang; to: TranslateLang }) => {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json().catch(() => ({}))) as TranslateResult & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Couldn’t translate — please try again.");
+      return data;
+    };
+
+    try {
+      // Fill both an English and a Ukrainian meaning whichever way we come in,
+      // so either language is an accepted quiz answer.
+      let characters: string;
+      let reading: string;
+      let english: string;
+      let ukrainian: string;
+
+      if (wanakana.isJapanese(text)) {
+        // Already Japanese — translate out to both meanings.
+        characters = text;
+        const [en, uk] = await Promise.all([
+          translate({ text, from: "ja", to: "en" }),
+          translate({ text, from: "ja", to: "uk" }),
+        ]);
+        english = en.translation;
+        ukrainian = uk.translation;
+        reading = japaneseReading(text, en.sourceRomaji);
+      } else if (inputType === "romaji") {
+        // Rōmaji → hiragana just well enough to translate into English, then
+        // translate that meaning back to Japanese so Google supplies the proper
+        // spelling (kanji, particle は over the phonetic わ) instead of a literal
+        // transliteration — and out to Ukrainian for the second meaning.
+        english = (
+          await translate({ text: wanakana.toHiragana(text.toLowerCase()), from: "ja", to: "en" })
+        ).translation;
+        const [ja, uk] = await Promise.all([
+          translate({ text: english, from: "en", to: "ja" }),
+          translate({ text: english, from: "en", to: "uk" }),
+        ]);
+        characters = ja.translation;
+        ukrainian = uk.translation;
+        reading = japaneseReading(characters, ja.targetRomaji);
+      } else if (inputType === "en") {
+        english = text;
+        const [ja, uk] = await Promise.all([
+          translate({ text, from: "en", to: "ja" }),
+          translate({ text, from: "en", to: "uk" }),
+        ]);
+        characters = ja.translation;
+        ukrainian = uk.translation;
+        reading = japaneseReading(characters, ja.targetRomaji);
+      } else {
+        // Ukrainian meaning typed in.
+        ukrainian = text;
+        const [ja, en] = await Promise.all([
+          translate({ text, from: "uk", to: "ja" }),
+          translate({ text, from: "uk", to: "en" }),
+        ]);
+        characters = ja.translation;
+        english = en.translation;
+        reading = japaneseReading(characters, ja.targetRomaji);
+      }
+
+      // English first, then Ukrainian; drop blanks and duplicates.
+      const meaning = [english, ukrainian]
+        .map((m) => m.trim())
+        .filter((m, i, arr) => m && arr.indexOf(m) === i)
+        .join(", ");
+
+      // Overwrite the meaning when it's empty or still holds our last auto-fill;
+      // keep it if you've typed or edited it yourself.
+      const prevAuto = lastAutoMeaningRef.current;
+      setForm((f) => {
+        const isAuto = !f.meanings.trim() || f.meanings === prevAuto;
+        return {
+          ...f,
+          characters,
+          readings: reading,
+          meanings: isAuto ? meaning : f.meanings,
+        };
+      });
+      lastAutoMeaningRef.current = meaning;
+    } catch (e) {
+      setHelperError(e instanceof Error ? e.message : "Couldn’t translate — please try again.");
+    } finally {
+      setTranslating(false);
+    }
+  }, [helperText, inputType]);
 
   const handleDelete = useCallback(
     async (item: CustomVocabDTO) => {
@@ -143,6 +259,59 @@ export default function CustomVocabPage() {
         <h2 className="mb-4 text-lg font-semibold">
           {editingId === null ? "Add a word or phrase" : "Edit item"}
         </h2>
+
+        <div className="mb-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-slate-600">Translate helper</p>
+            <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm font-medium">
+              {INPUT_TYPES.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setInputType(t.key)}
+                  className={
+                    inputType === t.key
+                      ? "bg-slate-700 px-3 py-2 text-white"
+                      : "bg-white px-3 py-2 text-slate-600 hover:bg-slate-100"
+                  }
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={helperText}
+              onChange={(e) => setHelperText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleTranslate();
+                }
+              }}
+              placeholder={INPUT_TYPES.find((t) => t.key === inputType)?.placeholder}
+              lang={inputType === "uk" ? "uk" : undefined}
+              autoComplete="off"
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 p-2 outline-none focus:border-amber-500"
+            />
+            <button
+              type="button"
+              onClick={handleTranslate}
+              disabled={translating || !helperText.trim()}
+              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {translating ? "Translating…" : "Translate"}
+            </button>
+          </div>
+          {helperError && <p className="mt-2 text-sm text-red-600">{helperError}</p>}
+          <p className="mt-2 text-xs text-slate-400">
+            Pick what you’re typing, then translate — fills the fields below. Powered by Google
+            Translate + kana conversion; double-check kanji spelling and particle readings (は/へ)
+            before saving.
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
