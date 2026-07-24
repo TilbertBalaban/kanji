@@ -139,6 +139,7 @@ async function main() {
         sequence: sequence++,
         meaning: p.meaning,
         structure: p.structure,
+        structureStandard: p.structure, // sample data is plain text; renders without colors
         explanation: p.explanation,
         partOfSpeech: p.partOfSpeech ?? null,
         slug: p.slug,
@@ -149,6 +150,7 @@ async function main() {
         position: p.position,
         meaning: p.meaning,
         structure: p.structure,
+        structureStandard: p.structure, // sample data is plain text; renders without colors
         explanation: p.explanation,
         partOfSpeech: p.partOfSpeech ?? null,
       },

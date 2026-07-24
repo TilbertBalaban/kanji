@@ -186,7 +186,14 @@ model GrammarPoint {
   lessonId       Int      @default(0) // Bunpro's global lesson id (1..50), 10 lessons per JLPT level
   lessonDescription String @default("") // Bunpro's lesson title, e.g. "Things that Are Crucial..."
   meaning        String
-  structure      String
+  structure      String // plain-text fallback (Bunpro's casual+polite structures, markup stripped and joined)
+  // Bunpro sends two separate structure forms, each with inline color markup
+  // (<strong> = red grammar term, <span class='chui'> = orange accent particle,
+  // <del>/<sup>/<ruby> etc.). We store both raw so the UI can render the exact
+  // colors and offer Bunpro's Standard/Polite toggle. structurePolite is ""
+  // when Bunpro has no distinct polite form (most points). See lib/bunpro-scraper.ts.
+  structureStandard String @default("") // raw HTML of Bunpro's casual_structure ("Standard")
+  structurePolite   String @default("") // raw HTML of Bunpro's polite_structure ("Polite"); "" if none
   explanation    String // may hold light markup; sanitized to plain text at seed time
   partOfSpeech   String?
   register       String?

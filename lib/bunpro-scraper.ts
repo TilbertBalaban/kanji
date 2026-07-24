@@ -58,7 +58,9 @@ export interface BunproCatalogPoint {
   lessonId: number;
   lessonDescription: string;
   meaning: string;
-  structure: string;
+  structure: string; // plain-text fallback (both forms, markup stripped, " / "-joined)
+  structureStandard: string; // raw HTML of casual_structure
+  structurePolite: string; // raw HTML of polite_structure ("" when Bunpro has none)
   explanation: string;
   partOfSpeech: string | null;
   register: string | null;
@@ -98,8 +100,16 @@ export async function fetchCatalog(sessionCookie: string): Promise<BunproCatalog
   return raw
     .filter((g) => g.level in JLPT_LEVEL_MAP)
     .map((g) => {
+      // Bunpro gives two structure forms as separate HTML strings. Keep each
+      // raw so the UI can reproduce Bunpro's colors (see structureMarkup) and
+      // its Standard/Polite toggle; also derive a plain-text `structure` as a
+      // no-markup fallback. A polite form that only repeats the standard one
+      // isn't a real register alternative — drop it so no toggle is offered.
+      const structureStandard = (g.casual_structure ?? "").trim();
+      let structurePolite = (g.polite_structure ?? "").trim();
+      if (structurePolite === structureStandard) structurePolite = "";
       const structure = stripMarkup(
-        [g.casual_structure, g.polite_structure].filter(Boolean).join(" / "),
+        [structureStandard, structurePolite].filter(Boolean).join(" / "),
       );
       return {
         id: g.id,
@@ -111,6 +121,8 @@ export async function fetchCatalog(sessionCookie: string): Promise<BunproCatalog
         lessonDescription: lessonDescById.get(g.lesson_id) ?? "",
         meaning: g.meaning,
         structure,
+        structureStandard,
+        structurePolite,
         explanation: stripMarkup(g.nuance_translation || g.nuance || ""),
         partOfSpeech: g.part_of_speech_translation || null,
         register: g.register_translation || null,

@@ -74,7 +74,9 @@ export interface GrammarPointDTO {
   lessonId: number;
   lessonDescription: string;
   meaning: string;
-  structure: string;
+  structure: string; // plain-text fallback; prefer structureStandard/Polite for display
+  structureStandard: string; // raw Bunpro HTML — render with StructureMarkup
+  structurePolite: string; // raw Bunpro HTML; "" when there's no distinct polite form
   explanation: string;
   partOfSpeech: string | null;
   register: string | null;
@@ -98,6 +100,8 @@ export function toGrammarPointDTO(p: GrammarPoint): GrammarPointDTO {
     lessonDescription: p.lessonDescription,
     meaning: p.meaning,
     structure: p.structure,
+    structureStandard: p.structureStandard,
+    structurePolite: p.structurePolite,
     explanation: p.explanation,
     partOfSpeech: p.partOfSpeech,
     register: p.register,

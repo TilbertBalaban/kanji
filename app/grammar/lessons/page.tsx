@@ -11,8 +11,8 @@ import {
   GrammarRelations,
   GrammarResources,
   SentenceCard,
-  StructureBlock,
-  StructureHeading,
+  StructureSection,
+  ViewOnBunproButton,
 } from "@/components/GrammarPointInfo";
 import { checkGrammarAnswer } from "@/lib/grammar-answer-checker";
 import type { GrammarPointDTO, GrammarRelationDTO, GrammarSentenceDTO } from "@/lib/grammar";
@@ -299,11 +299,18 @@ function GrammarLessonsSession() {
           </div>
         </div>
 
+        <div className="mt-4">
+          <ViewOnBunproButton slug={point.slug} />
+        </div>
+
         {/* Structure / Details — side-by-side tiles */}
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <StructureHeading>Structure</StructureHeading>
-            <StructureBlock structure={point.structure} title={point.title} />
+            <StructureSection
+              standard={point.structureStandard}
+              polite={point.structurePolite}
+              variant="lesson"
+            />
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-6">
             <h2 className="mb-3 text-lg text-slate-800">Details</h2>

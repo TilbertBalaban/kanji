@@ -11,6 +11,8 @@ import {
   GRAMMAR_RELATION_SECTIONS,
   GrammarResources,
   SentenceCard,
+  StructureSection,
+  ViewOnBunproButton,
 } from "@/components/GrammarPointInfo";
 import type {
   GrammarAboutBlockDTO,
@@ -36,6 +38,8 @@ interface GrammarPoint {
   jlptLevel: number;
   meaning: string;
   structure: string;
+  structureStandard: string;
+  structurePolite: string;
   explanation: string;
   partOfSpeech: string | null;
   register: string | null;
@@ -142,15 +146,15 @@ export default function GrammarDetailPage() {
         </div>
       </div>
 
+      <ViewOnBunproButton slug={point.slug} />
+
       {/* 2. Structure */}
       <section className="rounded-xl bg-white p-6 shadow">
-        <h2 className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Structure
-          <LegendInfoButton legend="structure" label="Structure Legend" size="sm" />
-        </h2>
-        <p className="text-lg" lang="ja">
-          {point.structure}
-        </p>
+        <StructureSection
+          standard={point.structureStandard}
+          polite={point.structurePolite}
+          variant="detail"
+        />
       </section>
 
       {/* 3. Details */}
