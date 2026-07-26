@@ -4,6 +4,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import * as wanakana from "wanakana";
 import { AudioButton } from "@/components/AudioButton";
 import { SubjectChar } from "@/components/SubjectChar";
+import { fromCyrillicLayout } from "@/lib/keyboard-layout";
 import type { SubjectDTO } from "@/lib/serialize";
 import { isVocabulary } from "@/lib/srs";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/ui";
@@ -122,12 +123,14 @@ export function QuizCard({
               const raw = e.target.value;
               if (wantsKana) {
                 const native = e.nativeEvent as InputEvent;
-                if (raw === "") inputCharsRef.current = "";
+                // Cyrillic keyboard layouts still type romaji, just with the wrong alphabet
+                const typed = fromCyrillicLayout(raw);
+                if (typed === "") inputCharsRef.current = "";
                 else if (native.inputType?.startsWith("delete"))
                   inputCharsRef.current = inputCharsRef.current.slice(0, -1);
-                else if (native.data) inputCharsRef.current += native.data;
-                else inputCharsRef.current = raw; // paste/autofill fallback
-                onInputChange(wanakana.toKana(raw, { IMEMode: true }), inputCharsRef.current);
+                else if (native.data) inputCharsRef.current += fromCyrillicLayout(native.data);
+                else inputCharsRef.current = typed; // paste/autofill fallback
+                onInputChange(wanakana.toKana(typed, { IMEMode: true }), inputCharsRef.current);
               } else {
                 onInputChange(raw, raw);
               }

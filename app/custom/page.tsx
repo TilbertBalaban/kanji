@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as wanakana from "wanakana";
 import { SpeechButton } from "@/components/SpeechButton";
 import type { CustomVocabDTO } from "@/lib/custom-vocab";
+import { fromCyrillicLayout } from "@/lib/keyboard-layout";
 import { STAGE_NAMES } from "@/lib/srs";
 import { japaneseReading, type TranslateLang, type TranslateResult } from "@/lib/translate";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS } from "@/lib/ui";
@@ -336,7 +337,7 @@ export default function CustomVocabPage() {
               onChange={(e) =>
                 setForm((f) => ({
                   ...f,
-                  readings: wanakana.toKana(e.target.value, { IMEMode: true }),
+                  readings: wanakana.toKana(fromCyrillicLayout(e.target.value), { IMEMode: true }),
                 }))
               }
               placeholder="はじめまして (type romaji, converts as you go)"

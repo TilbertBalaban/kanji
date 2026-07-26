@@ -11,6 +11,7 @@ import { type RefObject } from "react";
 import * as wanakana from "wanakana";
 import { EmphasisText } from "@/components/GrammarPointInfo";
 import { GRAMMAR_BLANK, type GrammarSentenceDTO } from "@/lib/grammar";
+import { fromCyrillicLayout } from "@/lib/keyboard-layout";
 import { TYPE_COLORS } from "@/lib/ui";
 
 // "revealed" = a miss occurred; the correct answer is shown inline and the
@@ -85,7 +86,11 @@ export function GrammarQuizCard({
         <input
           ref={inputRef}
           value={feedback === "correct" ? answer : input}
-          onChange={(e) => onInputChange(wanakana.toKana(e.target.value, { IMEMode: true }))}
+          onChange={(e) =>
+            onInputChange(
+              wanakana.toKana(fromCyrillicLayout(e.target.value), { IMEMode: true }),
+            )
+          }
           onKeyDown={(e) => e.key === "Enter" && onSubmit()}
           placeholder="答え (kana)"
           className="w-full bg-transparent p-4 text-center text-xl outline-none"
