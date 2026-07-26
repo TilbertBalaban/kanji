@@ -3,13 +3,13 @@
 // import from client components; the DB writes live in lib/progression.ts.
 
 import type { CustomVocab } from "@prisma/client";
-import { normalizeAnswer, type Meaning, type Reading } from "./srs";
+import { normalizeAnswer, readingWithoutSlots, type Meaning, type Reading } from "./srs";
 
 export interface CustomVocabDTO {
   id: number;
   characters: string;
   meanings: string[]; // first entry is primary
-  readings: string[]; // kana; empty = meaning-only item
+  readings: string[]; // usually kana; empty = meaning-only item
   notes: string | null;
   srsStage: number;
   availableAt: string | null; // ISO; null once burned
@@ -76,9 +76,22 @@ export function asReadings(readings: string[]): Reading[] {
 
 // ---------- Input parsing / validation ----------
 
-// Hiragana, katakana (incl. halfwidth), prolonged-sound and iteration marks,
-// middle dot and whitespace — what a reading may consist of.
-const KANA_ONLY = /^[ぁ-ゖゝゞァ-ヶーヽヾ・ｦ-ﾟ\s]+$/u;
+// Hiragana, katakana (incl. halfwidth), kanji and their iteration marks,
+// prolonged-sound mark, middle dot and whitespace — what a reading may consist
+// of, once its slots (〜 and [placeholders], see lib/srs.ts) have been taken
+// out. Stripping first means a slot may hold anything — "[years]さいです" —
+// while the rest still has to be Japanese, and a reading that is nothing but
+// slots is rejected along with the empty string.
+//
+// Kanji are allowed so a reading can be written the way the phrase reads
+// ("[years]歳です"), but note that reading answers are typed in kana: a kanji
+// in a reading can never be matched, so add a kana spelling as a second
+// reading if you want the reading question to be answerable.
+const JAPANESE_ONLY = /^[ぁ-ゖゝゞァ-ヶーヽヾ・ｦ-ﾟ一-龯々〆〇\s]+$/u;
+
+function isJapaneseReading(reading: string): boolean {
+  return JAPANESE_ONLY.test(readingWithoutSlots(reading));
+}
 
 export interface CustomVocabInput {
   characters: string;
@@ -87,12 +100,27 @@ export interface CustomVocabInput {
   notes: string | null;
 }
 
-/** Split a comma/、-separated list into trimmed non-empty entries. */
+/**
+ * Split a comma/、-separated list into trimmed non-empty entries. Separators
+ * inside a [placeholder] belong to the entry — "[years, ages]さいです" is one
+ * reading, not two.
+ */
 export function splitList(raw: string): string[] {
-  return raw
-    .split(/[,;、；]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const entries: string[] = [];
+  let current = "";
+  let inBracket = false;
+  for (const ch of raw) {
+    if (ch === "[" || ch === "［") inBracket = true;
+    else if (ch === "]" || ch === "］") inBracket = false;
+    else if (!inBracket && /[,;、；]/.test(ch)) {
+      entries.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  entries.push(current);
+  return entries.map((s) => s.trim()).filter(Boolean);
 }
 
 /**
@@ -122,8 +150,8 @@ export function parseCustomVocabInput(body: unknown): CustomVocabInput | string 
       ? splitList(b.readings)
       : [];
   const readings = rawReadings.map((s) => s.trim()).filter(Boolean);
-  if (readings.some((r) => !KANA_ONLY.test(r))) {
-    return "Readings must be written in kana (hiragana or katakana).";
+  if (readings.some((r) => !isJapaneseReading(r))) {
+    return "Readings must be written in Japanese, not rōmaji — 〜 and [placeholders] are fine (〜にみえます, [years]さいです).";
   }
   if (readings.some((r) => r.length > 100)) return "A reading is too long (max 100 characters).";
 

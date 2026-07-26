@@ -5,6 +5,7 @@ import {
   inactivityShiftMs,
   nextAvailableAt,
   nextStage,
+  readingWithoutSlots,
   tasksForSubject,
   type AuxMeaning,
   type Meaning,
@@ -177,5 +178,39 @@ describe("checkReading", () => {
   it("rejects wrong readings with no typo tolerance", () => {
     expect(checkReading("こ", readings)).toBe("incorrect");
     expect(checkReading("こうう", readings)).toBe("incorrect");
+  });
+});
+
+describe("checkReading with slots", () => {
+  const wave = accepted("〜にみえます") as Reading[];
+  const placeholder = accepted("[years]さいです") as Reading[];
+
+  it("lets 〜 stand for anything, including nothing", () => {
+    expect(checkReading("にみえます", wave)).toBe("correct");
+    expect(checkReading("げんきそうにみえます", wave)).toBe("correct");
+    expect(checkReading("〜にみえます", wave)).toBe("correct");
+    expect(checkReading("にみえました", wave)).toBe("incorrect");
+  });
+
+  it("requires something in a [placeholder]", () => {
+    expect(checkReading("にじゅっさいです", placeholder)).toBe("correct");
+    expect(checkReading("さいです", placeholder)).toBe("incorrect");
+    expect(checkReading("にじゅっさいでした", placeholder)).toBe("incorrect");
+  });
+
+  it("still matches katakana input against the fixed part", () => {
+    expect(checkReading("ニミエマス", wave)).toBe("correct");
+  });
+
+  it("treats brackets in a reading as a slot, not as regex syntax", () => {
+    expect(checkReading("あさいです", accepted("[a-z]さいです") as Reading[])).toBe("correct");
+  });
+});
+
+describe("readingWithoutSlots", () => {
+  it("drops 〜 and [placeholders]", () => {
+    expect(readingWithoutSlots("〜にみえます")).toBe("にみえます");
+    expect(readingWithoutSlots("[years]さいです")).toBe("さいです");
+    expect(readingWithoutSlots("はじめまして")).toBe("はじめまして");
   });
 });

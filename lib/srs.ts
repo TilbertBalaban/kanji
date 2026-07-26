@@ -215,6 +215,46 @@ function toHiragana(s: string): string {
   );
 }
 
+// ---------- Reading slots (custom vocabulary) ----------
+//
+// A custom-vocab reading may be a template with slots standing in for the part
+// that varies: 〜 for any run of kana (possibly none) and a [bracketed] hint
+// for a required one — "〜にみえます", "[years]さいです". Anything typed into
+// the slot counts, the rest has to match as usual. WaniKani's own readings
+// never contain either, so this only ever kicks in for the user's own items.
+
+/** One slot: a wave dash / tilde, or a [bracketed] placeholder (either width). */
+const READING_SLOT = /[〜～~]|[[［][^\]］]*[\]］]/;
+/** Same, as a split pattern — even parts are literal, odd parts are slots. */
+const READING_SLOT_SPLIT = new RegExp(`(${READING_SLOT.source})`);
+const READING_SLOT_GLOBAL = new RegExp(READING_SLOT.source, "g");
+
+export function hasReadingSlots(reading: string): boolean {
+  return READING_SLOT.test(reading);
+}
+
+/** The reading with its slots dropped — for speech synthesis and the like. */
+export function readingWithoutSlots(reading: string): string {
+  return reading.replace(READING_SLOT_GLOBAL, "").trim();
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readingSlotsMatch(reading: string, guess: string): boolean {
+  const source = reading
+    .split(READING_SLOT_SPLIT)
+    .filter(Boolean)
+    .map((part) => {
+      if (/^[〜～~]$/.test(part)) return "[\\s\\S]*";
+      if (part.startsWith("[") || part.startsWith("［")) return "[\\s\\S]+";
+      return escapeRegExp(toHiragana(normalize(part)));
+    })
+    .join("");
+  return new RegExp(`^${source}$`).test(guess);
+}
+
 /**
  * Readings must match exactly (no typo tolerance).
  * For kanji, answering with a real-but-not-requested reading type (e.g. kunyomi
@@ -224,7 +264,10 @@ export function checkReading(input: string, readings: Reading[]): AnswerResult {
   const guess = toHiragana(normalize(input));
   if (!guess) return "retry";
 
-  const isMatch = (r: Reading) => toHiragana(r.reading) === guess;
+  const isMatch = (r: Reading) =>
+    hasReadingSlots(r.reading)
+      ? readingSlotsMatch(r.reading, guess)
+      : toHiragana(r.reading) === guess;
 
   if (readings.filter((r) => r.acceptedAnswer).some(isMatch)) return "correct";
   if (readings.some(isMatch)) return "retry";

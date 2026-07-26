@@ -6,7 +6,7 @@ import * as wanakana from "wanakana";
 import { SpeechButton } from "@/components/SpeechButton";
 import type { CustomVocabDTO } from "@/lib/custom-vocab";
 import { fromCyrillicLayout } from "@/lib/keyboard-layout";
-import { STAGE_NAMES } from "@/lib/srs";
+import { readingWithoutSlots, STAGE_NAMES } from "@/lib/srs";
 import { japaneseReading, type TranslateLang, type TranslateResult } from "@/lib/translate";
 import { STAGE_GROUP_COLORS, stageGroup, TYPE_COLORS } from "@/lib/ui";
 
@@ -27,6 +27,24 @@ const INPUT_TYPES: { key: InputType; label: string; placeholder: string }[] = [
   { key: "en", label: "English", placeholder: "good evening" },
   { key: "uk", label: "Українська", placeholder: "добрий вечір" },
 ];
+
+// Kana IME for the reading field, minus the [placeholder] slots: whatever is
+// typed between the brackets is a hint for the variable part of a pattern
+// ("[years]さいです"), so it stays exactly as typed instead of being romaji-
+// converted into kana. Unclosed brackets count as open to the end of the
+// input, so the hint is left alone while you're still typing it.
+const SLOT = /([[［][^\]］]*[\]］]?)/;
+
+function toReadingKana(value: string): string {
+  return value
+    .split(SLOT)
+    .map((part) =>
+      part.startsWith("[") || part.startsWith("［")
+        ? part
+        : wanakana.toKana(fromCyrillicLayout(part), { IMEMode: true }),
+    )
+    .join("");
+}
 
 function toForm(item: CustomVocabDTO): FormState {
   return {
@@ -330,16 +348,11 @@ export default function CustomVocabPage() {
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              Reading (kana) <span className="text-slate-400">— optional for kana-only words</span>
+              Reading <span className="text-slate-400">— optional for kana-only words</span>
             </span>
             <input
               value={form.readings}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  readings: wanakana.toKana(fromCyrillicLayout(e.target.value), { IMEMode: true }),
-                }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, readings: toReadingKana(e.target.value) }))}
               placeholder="はじめまして (type romaji, converts as you go)"
               lang="ja"
               autoComplete="off"
@@ -348,6 +361,11 @@ export default function CustomVocabPage() {
               spellCheck={false}
               className="w-full rounded-lg border border-slate-300 p-2.5 text-lg outline-none focus:border-amber-500"
             />
+            <span className="mt-1 block text-xs text-slate-400">
+              〜 and [hints] stand in for the part that varies — 〜にみえます, [years]さいです. Anything
+              you type in that slot counts as correct. Reading answers are typed in kana, so a
+              reading written with kanji needs a kana one alongside it to be answerable.
+            </span>
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
@@ -414,7 +432,11 @@ export default function CustomVocabPage() {
             {items.map((item) => (
               <li key={item.id} className="flex items-center gap-4 px-6 py-3">
                 <SpeechButton
-                  text={item.readings[0] ?? item.characters}
+                  // Slots are hints, not sounds — speak only the fixed part.
+                  text={
+                    readingWithoutSlots(item.readings[0] ?? "") ||
+                    readingWithoutSlots(item.characters)
+                  }
                   className="h-8 w-8 shrink-0"
                 />
                 <div className="min-w-0 flex-1">

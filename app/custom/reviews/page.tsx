@@ -18,7 +18,7 @@ import {
   type CustomVocabDTO,
 } from "@/lib/custom-vocab";
 import { evaluateAnswer, type RelatedAnswers } from "@/lib/answer-checker";
-import { STAGE_NAMES } from "@/lib/srs";
+import { readingWithoutSlots, STAGE_NAMES } from "@/lib/srs";
 
 // The reviews API ships each due item with the user's other same-meaning
 // words, for the recall right-word-wrong-card shake.
@@ -242,7 +242,10 @@ export default function CustomReviewsPage() {
   const current = items[task.index];
   const subject = current.subject;
   const wantsKana = task.kind === "reading" || task.kind === "recall";
-  const spokenText = current.vocab.readings[0] ?? current.vocab.characters;
+  // A 〜/[hint] slot is a placeholder, not something to pronounce.
+  const spokenText =
+    readingWithoutSlots(current.vocab.readings[0] ?? "") ||
+    readingWithoutSlots(current.vocab.characters);
 
   // Each question (meaning / reading / recall) counts as one step of progress.
   const totalSteps = items.reduce(

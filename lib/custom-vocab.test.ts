@@ -30,13 +30,48 @@ describe("parseCustomVocabInput", () => {
     expect(input).toMatchObject({ readings: ["コーヒー"] });
   });
 
-  it("rejects non-kana readings", () => {
+  it("rejects rōmaji readings", () => {
     expect(
       parseCustomVocabInput({ characters: "犬", readings: "inu", meanings: "dog" }),
-    ).toMatch(/kana/);
+    ).toMatch(/rōmaji/);
+  });
+
+  it("allows kanji in readings", () => {
     expect(
       parseCustomVocabInput({ characters: "犬", readings: "犬", meanings: "dog" }),
-    ).toMatch(/kana/);
+    ).toMatchObject({ readings: ["犬"] });
+  });
+
+  it("accepts 〜 and [placeholders] in readings", () => {
+    expect(
+      parseCustomVocabInput({
+        characters: "〜にみえます",
+        readings: "〜にみえます",
+        meanings: "looks like",
+      }),
+    ).toMatchObject({ readings: ["〜にみえます"] });
+    expect(
+      parseCustomVocabInput({
+        characters: "〜歳です",
+        readings: "[years]歳です, [years]さいです",
+        meanings: "I am … years old",
+      }),
+    ).toMatchObject({ readings: ["[years]歳です", "[years]さいです"] });
+  });
+
+  it("still rejects rōmaji outside the slots", () => {
+    // Nothing but slots isn't a reading.
+    expect(
+      parseCustomVocabInput({ characters: "〜", readings: "〜", meanings: "and so on" }),
+    ).toMatch(/rōmaji/);
+    // An unclosed bracket is a typo, not a slot.
+    expect(
+      parseCustomVocabInput({ characters: "〜歳", readings: "[yearsさい", meanings: "age" }),
+    ).toMatch(/rōmaji/);
+  });
+
+  it("keeps separators inside a placeholder out of the split", () => {
+    expect(splitList("[years, ages]さいです")).toEqual(["[years, ages]さいです"]);
   });
 
   it("requires characters and at least one meaning", () => {
