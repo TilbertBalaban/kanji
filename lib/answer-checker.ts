@@ -79,8 +79,9 @@ export interface AnswerCheckArgs {
 const toHiragana = (s: string) => wkToHiragana(s, { convertLongVowelMark: false });
 
 // Kana, plus the wave dash a custom-vocab pattern reading is written with
-// (〜にみえます) — typing it back is a fair answer, not a script mismatch.
-const KANA_ONLY = /^[぀-ゟ゠-ヿ〜～]+$/;
+// (〜にみえます) — typing it back is a fair answer, not a script mismatch —
+// and whitespace, which checkReading ignores on both sides.
+const KANA_ONLY = /^[぀-ゟ゠-ヿ〜～\s]+$/;
 
 function visibleMeanings(subject: CheckableSubject): string[] {
   return subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning);

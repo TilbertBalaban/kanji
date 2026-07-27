@@ -197,6 +197,20 @@ describe("evaluateAnswer — reading shakes", () => {
       message: null,
     });
   });
+
+  it("passes a spaced answer to a spaced pattern reading", () => {
+    const custom = subject({
+      type: "custom",
+      characters: "〜に みえます",
+      meanings: [meaning("To look like", true, true)],
+      readings: [reading("〜に みえます", { accepted: true, primary: true })],
+    });
+    for (const response of ["にみえます", "に みえます", "〜に みえます"]) {
+      expect(evaluateAnswer({ questionType: "reading", response, subject: custom }).action).toBe(
+        "pass",
+      );
+    }
+  });
 });
 
 describe("evaluateAnswer — recall shakes", () => {

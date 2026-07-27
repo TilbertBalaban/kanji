@@ -242,6 +242,15 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Spaces in a reading are there for legibility ("〜に みえます") — spaced and
+ * unspaced answers are the same answer, so both sides are compared with all
+ * whitespace taken out.
+ */
+function stripSpaces(s: string): string {
+  return s.replace(/\s+/gu, "");
+}
+
 function readingSlotsMatch(reading: string, guess: string): boolean {
   const source = reading
     .split(READING_SLOT_SPLIT)
@@ -249,25 +258,25 @@ function readingSlotsMatch(reading: string, guess: string): boolean {
     .map((part) => {
       if (/^[〜～~]$/.test(part)) return "[\\s\\S]*";
       if (part.startsWith("[") || part.startsWith("［")) return "[\\s\\S]+";
-      return escapeRegExp(toHiragana(normalize(part)));
+      return escapeRegExp(stripSpaces(toHiragana(normalize(part))));
     })
     .join("");
   return new RegExp(`^${source}$`).test(guess);
 }
 
 /**
- * Readings must match exactly (no typo tolerance).
+ * Readings must match exactly (no typo tolerance), whitespace aside.
  * For kanji, answering with a real-but-not-requested reading type (e.g. kunyomi
  * when the primary is onyomi) returns "retry": shake the input, don't penalize.
  */
 export function checkReading(input: string, readings: Reading[]): AnswerResult {
-  const guess = toHiragana(normalize(input));
+  const guess = stripSpaces(toHiragana(normalize(input)));
   if (!guess) return "retry";
 
   const isMatch = (r: Reading) =>
     hasReadingSlots(r.reading)
       ? readingSlotsMatch(r.reading, guess)
-      : toHiragana(r.reading) === guess;
+      : stripSpaces(toHiragana(r.reading)) === guess;
 
   if (readings.filter((r) => r.acceptedAnswer).some(isMatch)) return "correct";
   if (readings.some(isMatch)) return "retry";

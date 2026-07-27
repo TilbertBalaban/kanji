@@ -207,6 +207,23 @@ describe("checkReading with slots", () => {
   });
 });
 
+describe("checkReading ignores whitespace", () => {
+  it("accepts an unspaced answer to a spaced reading, and the reverse", () => {
+    const spaced = accepted("〜に みえます") as Reading[];
+    expect(checkReading("にみえます", spaced)).toBe("correct");
+    expect(checkReading("に みえます", spaced)).toBe("correct");
+    expect(checkReading("げんき そうに みえます", spaced)).toBe("correct");
+
+    const unspaced = accepted("はじめまして") as Reading[];
+    expect(checkReading("はじめ まして", unspaced)).toBe("correct");
+    expect(checkReading("　はじめまして　", unspaced)).toBe("correct");
+  });
+
+  it("still rejects a genuinely different answer", () => {
+    expect(checkReading("に みえました", accepted("〜に みえます") as Reading[])).toBe("incorrect");
+  });
+});
+
 describe("readingWithoutSlots", () => {
   it("drops 〜 and [placeholders]", () => {
     expect(readingWithoutSlots("〜にみえます")).toBe("にみえます");
