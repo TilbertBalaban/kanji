@@ -28,7 +28,7 @@ export interface AssetMirrorResult {
   failed: number[];
 }
 
-function r2() {
+export function r2() {
   const missing = [
     "R2_ACCOUNT_ID",
     "R2_ACCESS_KEY_ID",
@@ -69,12 +69,31 @@ async function download(
   };
 }
 
-const IMAGE_EXT_BY_TYPE: Record<string, string> = {
+export const IMAGE_EXT_BY_TYPE: Record<string, string> = {
   "image/svg+xml": "svg",
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
 };
+
+/** Upload one object and return its public URL. Overwriting a key is a no-op-ish. */
+export async function uploadToR2(
+  key: string,
+  body: Buffer,
+  contentType: string,
+): Promise<string> {
+  const { bucket, base, s3 } = r2();
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      CacheControl: "public, max-age=31536000, immutable",
+    }),
+  );
+  return `${base}/${key}`;
+}
 
 /**
  * Mirror every subject still pointing at files.wanikani.com to R2 and repoint

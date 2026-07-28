@@ -1,25 +1,23 @@
-// Downloads the mnemonic artwork for each radical from its public
-// wanikani.com page into public/radical-images/ and records the local path
-// on the Subject row. For personal local study use only — do not redistribute.
+// Downloads the mnemonic artwork for each radical from its public wanikani.com
+// page, mirrors it to R2 and records the public URL on the Subject row — the
+// same treatment character images and audio get in lib/asset-mirror.ts, so the
+// artwork survives a deploy (public/ writes on Vercel do not) and the app never
+// depends on files.wanikani.com at runtime.
+// For personal local study use only — do not redistribute.
 //
 // Usage: npm run fetch:radical-images
-// Safe to re-run: already-downloaded radicals are skipped.
+// Safe to re-run: radicals that already have a mnemonic image are skipped.
+//
+// Only ~2/3 of radicals have artwork at all — the rest are reported as "no
+// artwork on page", which is normal, not an error, and they get re-checked on
+// every run (nothing records that we looked).
 
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { prisma } from "../lib/db";
+import { IMAGE_EXT_BY_TYPE, uploadToR2 } from "../lib/asset-mirror";
 
-const OUT_DIR = path.join(process.cwd(), "public", "radical-images");
 const DELAY_MS = 500; // be polite: ~2 pages/sec
 
 const IMAGE_RE = /<wk-mnemonic-image\s+src="(https:\/\/files\.wanikani\.com\/[^"]+)"/;
-
-const EXT_BY_CONTENT_TYPE: Record<string, string> = {
-  "image/png": "png",
-  "image/svg+xml": "svg",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,8 +31,6 @@ async function fetchImageUrl(slug: string): Promise<string | null> {
 }
 
 async function main() {
-  await mkdir(OUT_DIR, { recursive: true });
-
   const radicals = await prisma.subject.findMany({
     where: { type: "radical", mnemonicImage: null },
     select: { id: true, slug: true },
@@ -43,34 +39,37 @@ async function main() {
   console.log(`${radicals.length} radicals without a mnemonic image`);
 
   let ok = 0;
+  const none: string[] = [];
   const failed: string[] = [];
 
   for (const [i, radical] of radicals.entries()) {
     try {
       const imageUrl = await fetchImageUrl(radical.slug);
       if (!imageUrl) {
-        failed.push(radical.slug);
-        continue;
-      }
+        none.push(radical.slug); // this radical has no artwork — expected
+      } else {
+        const imgRes = await fetch(imageUrl);
+        if (!imgRes.ok) throw new Error(`${imgRes.status} on ${imageUrl}`);
 
-      const imgRes = await fetch(imageUrl);
-      if (!imgRes.ok) {
-        failed.push(radical.slug);
-        continue;
-      }
-      const contentType = imgRes.headers.get("content-type")?.split(";")[0] ?? "";
-      const ext = EXT_BY_CONTENT_TYPE[contentType] ?? "png";
-      const filename = `${radical.slug}.${ext}`;
-      await writeFile(
-        path.join(OUT_DIR, filename),
-        Buffer.from(await imgRes.arrayBuffer()),
-      );
+        // Key and serve the object by what the server actually returned, so PNG
+        // bytes are never declared as some other type.
+        const contentType =
+          imgRes.headers.get("content-type")?.split(";")[0].trim() ?? "image/png";
+        const ext = IMAGE_EXT_BY_TYPE[contentType];
+        if (!ext) throw new Error(`unexpected content type ${contentType}`);
 
-      await prisma.subject.update({
-        where: { id: radical.id },
-        data: { mnemonicImage: `/radical-images/${filename}` },
-      });
-      ok++;
+        const url = await uploadToR2(
+          `radical-images/${radical.slug}-mnemonic.${ext}`,
+          Buffer.from(await imgRes.arrayBuffer()),
+          contentType,
+        );
+
+        await prisma.subject.update({
+          where: { id: radical.id },
+          data: { mnemonicImage: url },
+        });
+        ok++;
+      }
       if ((i + 1) % 25 === 0) console.log(`${i + 1}/${radicals.length} processed…`);
     } catch (e) {
       failed.push(radical.slug);
@@ -79,7 +78,9 @@ async function main() {
     await sleep(DELAY_MS);
   }
 
-  console.log(`Done: ${ok} downloaded, ${failed.length} failed.`);
+  console.log(
+    `Done: ${ok} mirrored, ${none.length} with no artwork on page, ${failed.length} failed.`,
+  );
   if (failed.length) console.log("Failed slugs:", failed.join(", "));
 }
 
