@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as wanakana from "wanakana";
 import { SpeechButton } from "@/components/SpeechButton";
-import type { CustomVocabDTO } from "@/lib/custom-vocab";
+import { displayCharacters, type CustomVocabDTO } from "@/lib/custom-vocab";
 import { fromCyrillicLayout } from "@/lib/keyboard-layout";
 import { readingWithoutSlots, STAGE_NAMES } from "@/lib/srs";
 import { japaneseReading, type TranslateLang, type TranslateResult } from "@/lib/translate";
@@ -48,7 +48,7 @@ function toReadingKana(value: string): string {
 
 function toForm(item: CustomVocabDTO): FormState {
   return {
-    characters: item.characters,
+    characters: item.characters ?? "",
     readings: item.readings.join(", "),
     meanings: item.meanings.join(", "),
     notes: item.notes ?? "",
@@ -228,7 +228,7 @@ export default function CustomVocabPage() {
 
   const handleDelete = useCallback(
     async (item: CustomVocabDTO) => {
-      if (!confirm(`Delete “${item.characters}” and its SRS progress?`)) return;
+      if (!confirm(`Delete “${displayCharacters(item)}” and its SRS progress?`)) return;
       const res = await fetch(`/api/custom-vocab/${item.id}`, { method: "DELETE" });
       if (!res.ok) return;
       setItems((prev) => prev?.filter((i) => i.id !== item.id) ?? prev);
@@ -238,7 +238,7 @@ export default function CustomVocabPage() {
   );
 
   const handleReset = useCallback(async (item: CustomVocabDTO) => {
-    if (!confirm(`Reset “${item.characters}” back to Apprentice I?`)) return;
+    if (!confirm(`Reset “${displayCharacters(item)}” back to Apprentice I?`)) return;
     const res = await fetch(`/api/custom-vocab/${item.id}/reset`, { method: "POST" });
     if (!res.ok) return;
     const fresh = await fetch("/api/custom-vocab")
@@ -334,7 +334,7 @@ export default function CustomVocabPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              Japanese <span className="text-red-500">*</span>
+              Japanese <span className="text-slate-400">— optional if you fill in a reading</span>
             </span>
             <input
               ref={charactersRef}
@@ -345,6 +345,10 @@ export default function CustomVocabPage() {
               autoComplete="off"
               className="w-full rounded-lg border border-slate-300 p-2.5 text-lg outline-none focus:border-amber-500"
             />
+            <span className="mt-1 block text-xs text-slate-400">
+              Leave it empty to quiz from the reading alone: the item then asks two questions —
+              reading → meaning, and meaning → reading.
+            </span>
           </label>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
@@ -435,20 +439,22 @@ export default function CustomVocabPage() {
                   // Slots are hints, not sounds — speak only the fixed part.
                   text={
                     readingWithoutSlots(item.readings[0] ?? "") ||
-                    readingWithoutSlots(item.characters)
+                    readingWithoutSlots(item.characters ?? "")
                   }
                   className="h-8 w-8 shrink-0"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate">
                     <span lang="ja" className="text-xl font-medium">
-                      {item.characters}
+                      {displayCharacters(item)}
                     </span>
-                    {item.readings.length > 0 && item.readings.join("") !== item.characters && (
-                      <span lang="ja" className="ml-3 text-slate-500">
-                        {item.readings.join("、")}
-                      </span>
-                    )}
+                    {item.characters !== null &&
+                      item.readings.length > 0 &&
+                      item.readings.join("") !== item.characters && (
+                        <span lang="ja" className="ml-3 text-slate-500">
+                          {item.readings.join("、")}
+                        </span>
+                      )}
                   </p>
                   <p className="truncate text-sm text-slate-500">
                     {item.meanings.join(", ")}

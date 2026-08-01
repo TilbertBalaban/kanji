@@ -74,10 +74,20 @@ describe("parseCustomVocabInput", () => {
     expect(splitList("[years, ages]さいです")).toEqual(["[years, ages]さいです"]);
   });
 
-  it("requires characters and at least one meaning", () => {
+  it("accepts a reading without characters (reading-only item)", () => {
+    expect(
+      parseCustomVocabInput({ readings: "いぬ", meanings: "dog" }),
+    ).toEqual({ characters: null, meanings: ["dog"], readings: ["いぬ"], notes: null });
+    // Whitespace-only characters is the same as none.
+    expect(parseCustomVocabInput({ characters: "  ", readings: "いぬ", meanings: "dog" })).toMatchObject(
+      { characters: null },
+    );
+  });
+
+  it("requires characters or a reading, plus at least one meaning", () => {
     expect(parseCustomVocabInput({ meanings: "dog" })).toMatch(/word\/phrase/);
     expect(parseCustomVocabInput({ characters: "犬", meanings: " , " })).toMatch(/meaning/);
-    expect(parseCustomVocabInput({})).toMatch(/word\/phrase/);
+    expect(parseCustomVocabInput({})).toMatch(/meaning/);
   });
 
   it("splits on Japanese separators too", () => {
@@ -87,10 +97,22 @@ describe("parseCustomVocabInput", () => {
 
 describe("tasksForCustomVocab", () => {
   it("asks reading and recall only when a reading exists", () => {
-    expect(tasksForCustomVocab({ readings: ["はじめまして"] })).toEqual({
+    expect(tasksForCustomVocab({ characters: "はじめまして", readings: ["はじめまして"] })).toEqual({
       reading: true,
       recall: true,
     });
-    expect(tasksForCustomVocab({ readings: [] })).toEqual({ reading: false, recall: false });
+    expect(tasksForCustomVocab({ characters: "OK", readings: [] })).toEqual({
+      reading: false,
+      recall: false,
+    });
+  });
+
+  it("skips the reading question for a reading-only item", () => {
+    // Meaning (prompted by the reading) + recall — the reading question would
+    // show the answer.
+    expect(tasksForCustomVocab({ characters: null, readings: ["いぬ"] })).toEqual({
+      reading: false,
+      recall: true,
+    });
   });
 });

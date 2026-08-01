@@ -14,6 +14,7 @@ import { SpeechButton } from "@/components/SpeechButton";
 import {
   asMeanings,
   asReadings,
+  displayCharacters,
   tasksForCustomVocab,
   type CustomVocabDTO,
 } from "@/lib/custom-vocab";
@@ -88,7 +89,9 @@ export default function CustomReviewsPage() {
             subject: {
               id: vocab.id,
               type: "custom",
-              characters: vocab.characters,
+              // A reading-only item is prompted by its reading, so the meaning
+              // question reads reading → meaning.
+              characters: displayCharacters(vocab),
               characterImage: null,
               meanings: asMeanings(vocab.meanings),
               readings: asReadings(vocab.readings),
@@ -273,7 +276,7 @@ export default function CustomReviewsPage() {
   // A 〜/[hint] slot is a placeholder, not something to pronounce.
   const spokenText =
     readingWithoutSlots(current.vocab.readings[0] ?? "") ||
-    readingWithoutSlots(current.vocab.characters);
+    readingWithoutSlots(current.vocab.characters ?? "");
 
   // Each question (meaning / reading / recall) counts as one step of progress.
   const totalSteps = items.reduce(

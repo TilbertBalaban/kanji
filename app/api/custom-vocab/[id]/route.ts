@@ -29,6 +29,20 @@ export async function PATCH(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
+  // Reading-only items (characters = null) sit outside the unique index — see
+  // the POST route — so their duplicates are caught by hand.
+  if (input.characters === null) {
+    const duplicate = await prisma.customVocab.findFirst({
+      where: { userId, characters: null, readings: JSON.stringify(input.readings), NOT: { id } },
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        { error: `“${input.readings[0]}” is already in your custom vocabulary.` },
+        { status: 409 },
+      );
+    }
+  }
+
   try {
     const item = await prisma.customVocab.update({
       where: { id },

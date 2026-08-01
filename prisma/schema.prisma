@@ -153,9 +153,13 @@ model UserProgress {
 model CustomVocab {
   id         Int      @id @default(autoincrement())
   userId     String
-  characters String // the word/phrase as written, e.g. "はじめまして"
+  // The word/phrase as written, e.g. "はじめまして". Null for a reading-only
+  // item (no Japanese spelling given), which is then prompted by its reading.
+  // Null rather than "" so the (userId, characters) unique index keeps ignoring
+  // it — Postgres treats each NULL as distinct.
+  characters String?
   meanings   String // JSON [string] — first entry is primary
-  readings   String // JSON [string] — kana; may be empty (meaning-only item)
+  readings   String // JSON [string] — kana; empty only when characters is set
   notes      String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt

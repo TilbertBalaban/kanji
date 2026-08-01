@@ -7,7 +7,7 @@ import { normalizeAnswer, readingWithoutSlots, type Meaning, type Reading } from
 
 export interface CustomVocabDTO {
   id: number;
-  characters: string;
+  characters: string | null; // null = reading-only item, prompted by its reading
   meanings: string[]; // first entry is primary
   readings: string[]; // usually kana; empty = meaning-only item
   notes: string | null;
@@ -30,6 +30,17 @@ export function toCustomVocabDTO(v: CustomVocab): CustomVocabDTO {
 }
 
 /**
+ * What the item is shown as on a card and in lists: its Japanese spelling, or
+ * its reading when no spelling was given (a reading-only item). Empty only for
+ * the impossible case of neither.
+ */
+export function displayCharacters(
+  item: Pick<CustomVocabDTO, "characters" | "readings">,
+): string {
+  return item.characters ?? item.readings[0] ?? "";
+}
+
+/**
  * For each item, the *other* items sharing a meaning — the recall answer
  * checker's sameMeaningVocab shake (see lib/answer-checker.ts), so answering
  * an English prompt with a different word for the same meaning bounces
@@ -49,19 +60,25 @@ export function sameMeaningCustomVocab(
           other.readings.length > 0 &&
           other.meanings.some((m) => own.has(normalizeAnswer(m))),
       )
-      .map((other) => ({ characters: other.characters, readings: other.readings }));
+      .map((other) => ({ characters: displayCharacters(other), readings: other.readings }));
     if (variants.length > 0) result.set(item.id, variants);
   }
   return result;
 }
 
-/** Which prompts a custom-vocab review asks: meaning always; reading and
- *  recall (English → reading) only when the item has a reading. */
-export function tasksForCustomVocab(item: Pick<CustomVocabDTO, "readings">): {
+/** Which prompts a custom-vocab review asks. Meaning always (prompted by the
+ *  Japanese, or by the reading for a reading-only item). Recall (English →
+ *  reading) whenever there is a reading. Reading (Japanese → reading) only when
+ *  there is a Japanese spelling to ask it from — for a reading-only item the
+ *  prompt would already be the answer, so it asks just the two questions. */
+export function tasksForCustomVocab(item: Pick<CustomVocabDTO, "characters" | "readings">): {
   reading: boolean;
   recall: boolean;
 } {
-  return { reading: item.readings.length > 0, recall: item.readings.length > 0 };
+  return {
+    reading: item.readings.length > 0 && item.characters !== null,
+    recall: item.readings.length > 0,
+  };
 }
 
 // Adapters into the shapes checkMeaning/checkReading and QuizCard expect:
@@ -94,7 +111,8 @@ function isJapaneseReading(reading: string): boolean {
 }
 
 export interface CustomVocabInput {
-  characters: string;
+  characters: string | null; // null when only a reading was given
+
   meanings: string[];
   readings: string[];
   notes: string | null;
@@ -127,13 +145,18 @@ export function splitList(raw: string): string[] {
  * Validate a create/update payload. Returns the normalized input, or a
  * human-readable error string. Meanings/readings accept either arrays or a
  * single separator-joined string (the form sends strings).
+ *
+ * The Japanese spelling is optional — an item with only a reading is a valid
+ * reading-only item (see tasksForCustomVocab) — but one of the two is required.
  */
 export function parseCustomVocabInput(body: unknown): CustomVocabInput | string {
   const b = (body ?? {}) as Record<string, unknown>;
 
-  const characters = typeof b.characters === "string" ? b.characters.trim() : "";
-  if (!characters) return "The Japanese word/phrase is required.";
-  if (characters.length > 100) return "The word/phrase is too long (max 100 characters).";
+  const rawCharacters = typeof b.characters === "string" ? b.characters.trim() : "";
+  const characters = rawCharacters || null;
+  if (characters && characters.length > 100) {
+    return "The word/phrase is too long (max 100 characters).";
+  }
 
   const rawMeanings = Array.isArray(b.meanings)
     ? b.meanings.map(String)
@@ -154,6 +177,9 @@ export function parseCustomVocabInput(body: unknown): CustomVocabInput | string 
     return "Readings must be written in Japanese, not rōmaji — 〜 and [placeholders] are fine (〜にみえます, [years]さいです).";
   }
   if (readings.some((r) => r.length > 100)) return "A reading is too long (max 100 characters).";
+  if (!characters && readings.length === 0) {
+    return "Give the Japanese word/phrase, a reading, or both.";
+  }
 
   const notes = typeof b.notes === "string" && b.notes.trim() ? b.notes.trim() : null;
   if (notes && notes.length > 2000) return "Notes are too long (max 2000 characters).";

@@ -34,6 +34,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: input }, { status: 400 });
   }
 
+  // A reading-only item has characters = null, which the (userId, characters)
+  // unique index can't police — Postgres treats every NULL as distinct — so
+  // check it by reading here to keep "already in your list" working.
+  if (input.characters === null) {
+    const duplicate = await prisma.customVocab.findFirst({
+      where: { userId, characters: null, readings: JSON.stringify(input.readings) },
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        { error: `“${input.readings[0]}” is already in your custom vocabulary.` },
+        { status: 409 },
+      );
+    }
+  }
+
   const now = new Date();
   try {
     const item = await prisma.customVocab.create({
