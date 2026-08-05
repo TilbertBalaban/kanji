@@ -69,8 +69,10 @@ function GrammarLessonsSession() {
   // an opt-in extra batch instead of the regular daily-limited one.
   const startExtra = useSearchParams().get("extra") === "1";
 
+  // Callers that replace an existing phase set setPhase("loading") themselves —
+  // load() itself only sets state once the response arrives, so the mount
+  // effect doesn't set state synchronously (react-hooks/set-state-in-effect).
   const load = useCallback((extra = false) => {
-    setPhase("loading");
     if (mistakesMode) {
       fetch("/api/grammar/recent-mistakes")
         .then((r) => r.json())
@@ -141,6 +143,7 @@ function GrammarLessonsSession() {
     } else if (mistakesMode) {
       setPhase("done");
     } else {
+      setPhase("loading");
       await completion;
       load();
     }
@@ -236,7 +239,10 @@ function GrammarLessonsSession() {
           {doneToday} done today · {totalAvailable} more waiting on the path.
         </p>
         <button
-          onClick={() => load(true)}
+          onClick={() => {
+            setPhase("loading");
+            load(true);
+          }}
           className="mt-6 rounded-lg px-6 py-3 text-white"
           style={{ backgroundColor: TYPE_COLORS.grammar }}
         >

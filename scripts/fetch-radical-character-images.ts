@@ -1,20 +1,21 @@
-// Downloads the SVG character glyph for each image-only radical (no `characters`)
-// from the WaniKani API into public/radical-images/ and repoints characterImage
-// at the local file.
+// Mirrors the SVG character glyph for each image-only radical (no `characters`)
+// to R2 and repoints characterImage at the R2 public URL — the same treatment
+// mnemonic artwork gets in scripts/fetch-radical-images.ts.
 //
 // Why: the character_images URLs stored at seed time are the PNG variants, which
 // files.wanikani.com now serves as 403 (CDN-signed). The SVG variant is still
-// public, so we grab that and host it locally so it never breaks again.
+// public, so we grab that and host it on R2 so it never breaks again. (An older
+// version of this script wrote into public/radical-images/ instead — that dir is
+// gitignored and public/ writes don't survive a Vercel deploy, so any radicals
+// still pointing there are re-mirrored too.)
 //
 // Usage: npm run fetch:radical-character-images
-// Safe to re-run: radicals already pointing at a local /radical-images/ path are skipped.
+// Safe to re-run: radicals already pointing at R2 are skipped.
 
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { prisma } from "../lib/db";
+import { uploadToR2 } from "../lib/asset-mirror";
 import { WK_API_BASE, wkFetch } from "../lib/wanikani-api";
 
-const OUT_DIR = path.join(process.cwd(), "public", "radical-images");
 const API_KEY = process.env.WANIKANI_API_KEY ?? "";
 const DELAY_MS = 500; // be polite: ~2 req/sec
 
@@ -40,20 +41,25 @@ async function fetchSvgUrl(id: number): Promise<string | null> {
 }
 
 async function main() {
-  await mkdir(OUT_DIR, { recursive: true });
-
   // Some seeds stored "no characters" as empty string rather than NULL.
   const targets = await prisma.subject.findMany({
     where: {
       type: "radical",
       OR: [{ characters: null }, { characters: "" }],
-      // skip ones already fixed to a local path
-      NOT: { characterImage: { startsWith: "/radical-images/" } },
+      // Needs fixing when the stored URL is missing, still points at
+      // WaniKani's CDN, or at the retired local /radical-images/ path.
+      AND: {
+        OR: [
+          { characterImage: null },
+          { characterImage: { contains: "wanikani" } },
+          { characterImage: { startsWith: "/radical-images/" } },
+        ],
+      },
     },
     select: { id: true, slug: true },
     orderBy: { level: "asc" },
   });
-  console.log(`${targets.length} image-only radicals need a local character image`);
+  console.log(`${targets.length} image-only radicals need a mirrored character image`);
 
   let ok = 0;
   const failed: string[] = [];
@@ -71,18 +77,18 @@ async function main() {
         failed.push(radical.slug);
         continue;
       }
-      const filename = `${radical.slug}-char.svg`;
-      await writeFile(
-        path.join(OUT_DIR, filename),
+      const url = await uploadToR2(
+        `radical-images/${radical.slug}-char.svg`,
         Buffer.from(await imgRes.arrayBuffer()),
+        "image/svg+xml",
       );
 
       await prisma.subject.update({
         where: { id: radical.id },
-        data: { characterImage: `/radical-images/${filename}` },
+        data: { characterImage: url },
       });
       ok++;
-      console.log(`  ${radical.slug} -> /radical-images/${filename}`);
+      console.log(`  ${radical.slug} -> ${url}`);
     } catch (e) {
       failed.push(radical.slug);
       console.error(`error on ${radical.slug}:`, e);
@@ -90,7 +96,7 @@ async function main() {
     await sleep(DELAY_MS);
   }
 
-  console.log(`Done: ${ok} fixed, ${failed.length} failed.`);
+  console.log(`Done: ${ok} mirrored, ${failed.length} failed.`);
   if (failed.length) console.log("Failed slugs:", failed.join(", "));
 }
 

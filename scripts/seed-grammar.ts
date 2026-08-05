@@ -20,6 +20,7 @@ import { GRAMMAR_BLANK } from "../lib/grammar";
 import {
   type BunproCatalogPoint,
   type BunproPointDetail,
+  type BunproRawIncluded,
   fetchCatalog,
   fetchPointIncluded,
   parsePointDetail,
@@ -70,7 +71,7 @@ async function cachedDetail(
   point: BunproCatalogPoint,
 ): Promise<BunproPointDetail> {
   const cachePath = path.join(CACHE_DIR, `${point.id}.json`);
-  let included: any;
+  let included: BunproRawIncluded;
   try {
     included = JSON.parse(await readFile(cachePath, "utf-8"));
   } catch {

@@ -179,5 +179,7 @@ export function toGrammarRelationDTO(r: GrammarRelation): GrammarRelationDTO {
 /** The sentence a review/mistake shows next, rotating through position order. */
 export function sentenceAtCursor<T>(sentences: T[], cursor: number): T | null {
   if (sentences.length === 0) return null;
-  return sentences[cursor % sentences.length];
+  // Double modulo so a (corrupt) negative cursor still lands in range instead
+  // of indexing out of bounds and returning undefined.
+  return sentences[((cursor % sentences.length) + sentences.length) % sentences.length];
 }

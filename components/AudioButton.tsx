@@ -35,6 +35,8 @@ export function AudioButton({
   useEffect(() => {
     if (autoPlay) play();
     // Play once on mount; the button is remounted each time a reading is revealed.
+    // Stop the clip on unmount so it doesn't play over the next question.
+    return () => audioRef.current?.pause();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

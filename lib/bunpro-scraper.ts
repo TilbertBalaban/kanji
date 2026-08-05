@@ -13,10 +13,99 @@
 
 const USER_AGENT = "Mozilla/5.0 (compatible; KaniLocal grammar seed script)";
 
-function extractNextData(html: string): any {
+// Raw shapes of the JSON Bunpro embeds in its pages. Only the fields this
+// scraper actually reads are declared; anything else is ignored.
+interface RawCatalogPoint {
+  id: number;
+  slug: string;
+  title: string;
+  level: string;
+  grammar_order: number;
+  lesson_id: number;
+  meaning: string;
+  casual_structure?: string | null;
+  polite_structure?: string | null;
+  nuance_translation?: string | null;
+  nuance?: string | null;
+  part_of_speech_translation?: string | null;
+  register_translation?: string | null;
+  word_type_translation?: string | null;
+  caution?: string | null;
+}
+
+interface RawStudyQuestion {
+  id: number;
+  question_type?: string;
+  validation_status?: string;
+  sentence_order: number;
+  content: string;
+  translation?: string | null;
+  answer?: string | null;
+  kanji_answer?: string | null;
+  alternate_grammar?: string[] | null;
+  kanji_alt_grammar?: string[] | null;
+  wrong_answers?: Record<string, unknown> | null;
+  alternate_answers?: Record<string, unknown> | null;
+  female_audio_url?: string | null;
+  male_audio_url?: string | null;
+}
+
+interface RawRelatable {
+  id: number;
+  slug: string;
+  title: string;
+  meaning: string;
+  type_snake: string;
+  level: string;
+}
+
+interface RawRelatedContent {
+  relationship_type: string;
+  body?: string | null;
+  first_relatable: RawRelatable;
+  second_relatable: RawRelatable;
+}
+
+interface RawSupplementalLink {
+  site?: string | null;
+  description?: string | null;
+  link?: string | null;
+}
+
+interface RawOfflineResource {
+  source?: string | null;
+  location?: string | null;
+}
+
+/** Raw `included` page blob for one grammar point (also cached to disk by seed-grammar.ts). */
+export interface BunproRawIncluded {
+  studyQuestions?: RawStudyQuestion[];
+  writeups?: { body?: string | null }[];
+  relatedContents?: RawRelatedContent[];
+  supplementalLinks?: RawSupplementalLink[];
+  offlineResources?: RawOfflineResource[];
+}
+
+interface BunproNextData {
+  props?: {
+    pageProps?: {
+      grammarPoints?: RawCatalogPoint[];
+      lessons?: { id: number; description: string }[];
+      included?: BunproRawIncluded;
+      __namespaces?: {
+        rev?: {
+          structure?: Record<string, string>;
+          details?: Record<string, string>;
+        };
+      };
+    };
+  };
+}
+
+function extractNextData(html: string): BunproNextData {
   const match = html.match(/__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
   if (!match) throw new Error("Could not find __NEXT_DATA__ in Bunpro response — page shape may have changed");
-  return JSON.parse(match[1]);
+  return JSON.parse(match[1]) as BunproNextData;
 }
 
 async function fetchBunproHtml(
@@ -93,8 +182,9 @@ function stripMarkupKeepStrong(s: string): string {
 export async function fetchCatalog(sessionCookie: string): Promise<BunproCatalogPoint[]> {
   const html = await fetchBunproHtml("/grammar_points", sessionCookie);
   const data = extractNextData(html);
-  const raw: any[] = data.props.pageProps.grammarPoints;
-  const lessons: any[] = data.props.pageProps.lessons ?? [];
+  const raw = data.props?.pageProps?.grammarPoints;
+  if (!raw) throw new Error("Bunpro page shape changed: pageProps.grammarPoints missing");
+  const lessons = data.props?.pageProps?.lessons ?? [];
   const lessonDescById = new Map<number, string>(lessons.map((l) => [l.id, l.description]));
 
   return raw
@@ -149,7 +239,7 @@ export interface BunproSentence {
 // Bunpro attaches two per-question maps of wrong answers to localized hint
 // messages: alternate_answers (usually same meaning, different register) and
 // wrong_answers (point-specific traps). Merge both, keeping the English text.
-function parseWrongAnswerHints(q: any): Record<string, string> {
+function parseWrongAnswerHints(q: RawStudyQuestion): Record<string, string> {
   const hints: Record<string, string> = {};
   for (const source of [q.wrong_answers, q.alternate_answers]) {
     for (const [wrong, msg] of Object.entries(source ?? {})) {
@@ -165,7 +255,7 @@ function parseWrongAnswerHints(q: any): Record<string, string> {
 // doesn't need to know about the source format.
 const BUNPRO_BLANK_RE = /_{2,}/;
 
-function questionToExample(q: any, blankMarker: string): BunproWriteupExample {
+function questionToExample(q: RawStudyQuestion, blankMarker: string): BunproWriteupExample {
   return {
     japanese: stripMarkup(q.content).replace(BUNPRO_BLANK_RE, blankMarker),
     english: stripMarkupKeepStrong(q.translation || ""),
@@ -174,7 +264,7 @@ function questionToExample(q: any, blankMarker: string): BunproWriteupExample {
   };
 }
 
-function parseSentences(questions: any[], blankMarker: string): BunproSentence[] {
+function parseSentences(questions: RawStudyQuestion[], blankMarker: string): BunproSentence[] {
   return questions
     .filter((q) => q.question_type === "cloze" && q.validation_status === "validated")
     .sort((a, b) => a.sentence_order - b.sentence_order)
@@ -228,12 +318,12 @@ function extractStudyQuestionIds(html: string): number[] {
 
 function resolveExamples(
   ids: number[],
-  questionsById: Map<number, any>,
+  questionsById: Map<number, RawStudyQuestion>,
   blankMarker: string,
 ): BunproWriteupExample[] {
   return ids
     .map((id) => questionsById.get(id))
-    .filter((q): q is any => !!q)
+    .filter((q): q is RawStudyQuestion => !!q)
     .map((q) => questionToExample(q, blankMarker));
 }
 
@@ -244,7 +334,7 @@ function resolveExamples(
  */
 function parseBlocks(
   html: string,
-  questionsById: Map<number, any>,
+  questionsById: Map<number, RawStudyQuestion>,
   blankMarker: string,
 ): BunproWriteupBlock[] {
   const blocks: BunproWriteupBlock[] = [];
@@ -272,7 +362,7 @@ function parseBlocks(
  */
 function parseWriteup(
   bodyHtml: string,
-  questionsById: Map<number, any>,
+  questionsById: Map<number, RawStudyQuestion>,
   blankMarker: string,
 ): BunproWriteup {
   const cautions: { text: string; examples: BunproWriteupExample[] }[] = [];
@@ -301,7 +391,7 @@ export interface BunproRelation {
   otherLevel: string;
 }
 
-function parseRelations(bunproId: number, relatedContents: any[]): BunproRelation[] {
+function parseRelations(bunproId: number, relatedContents: RawRelatedContent[]): BunproRelation[] {
   return relatedContents.map((r) => {
     const other = r.first_relatable.id === bunproId ? r.second_relatable : r.first_relatable;
     return {
@@ -346,38 +436,35 @@ export interface BunproPointDetail {
 export async function fetchPointIncluded(
   sessionCookie: string,
   bunproId: number,
-): Promise<any> {
+): Promise<BunproRawIncluded> {
   const html = await fetchBunproHtml(`/grammar_points/${bunproId}`, sessionCookie);
   const data = extractNextData(html);
-  return data.props.pageProps.included ?? {};
+  return data.props?.pageProps?.included ?? {};
 }
 
 /** One grammar point's example sentences, About writeup, and synonym/antonym/related links. */
 export function parsePointDetail(
-  included: any,
+  included: BunproRawIncluded,
   bunproId: number,
   blankMarker: string,
 ): BunproPointDetail {
-  const questions: any[] = included.studyQuestions ?? [];
-  const writeupBody: string = included.writeups?.[0]?.body ?? "";
-  const relatedContents: any[] = included.relatedContents ?? [];
-  const supplementalLinks: any[] = included.supplementalLinks ?? [];
-  const offlineResources: any[] = included.offlineResources ?? [];
-  const questionsById = new Map<number, any>(questions.map((q) => [q.id, q]));
+  const questions = included.studyQuestions ?? [];
+  const writeupBody = included.writeups?.[0]?.body ?? "";
+  const questionsById = new Map<number, RawStudyQuestion>(questions.map((q) => [q.id, q]));
 
   return {
     sentences: parseSentences(questions, blankMarker),
     writeup: parseWriteup(writeupBody, questionsById, blankMarker),
-    relations: parseRelations(bunproId, relatedContents),
-    onlineResources: supplementalLinks
-      .filter((l) => l.link)
+    relations: parseRelations(bunproId, included.relatedContents ?? []),
+    onlineResources: (included.supplementalLinks ?? [])
+      .filter((l): l is RawSupplementalLink & { link: string } => !!l.link)
       .map((l) => ({
         site: l.site ?? "",
         description: stripMarkup(l.description ?? ""),
         link: l.link,
       })),
-    offlineResources: offlineResources
-      .filter((r) => r.source)
+    offlineResources: (included.offlineResources ?? [])
+      .filter((r): r is RawOfflineResource & { source: string } => !!r.source)
       .map((r) => ({
         source: r.source,
         location: stripMarkup(r.location ?? ""),
@@ -405,8 +492,11 @@ export function sleep(ms: number): Promise<void> {
 /** slug (e.g. "linking-particle") → Japanese term + reading from Bunpro's term dictionary. */
 export type BunproTermDict = Record<string, { termJa: string; reading: string | null }>;
 
+/** Decoded "encyclo" i18n namespace: group ("terms", "ui", …) → key → English text. */
+export type EncycloNamespace = Record<string, Record<string, string>>;
+
 export interface BunproLegendSources {
-  encyclo: any; // decoded "encyclo" translation namespace
+  encyclo: EncycloNamespace; // decoded "encyclo" translation namespace
   structureLegendTitle: string; // rev:structure.legend-title
   registerLegendTitle: string; // rev:details.register
   terms: BunproTermDict;
@@ -481,7 +571,9 @@ function parseLazyChunkPaths(webpackJs: string): string[] {
   const seg = fnMatch[0];
   const paths = new Set<string>();
   for (const m of seg.matchAll(/"(static\/chunks\/[^"]+\.js)"/g)) paths.add(`/_next/${m[1]}`);
-  const names = new Map(seg.matchAll(/(\d+):"([0-9a-f]{8})"/g).map((m) => [m[1], m[2]]));
+  // Spread before .map — iterator helpers on matchAll need Node ≥22, and this
+  // project's toolchain only guarantees Node 20.
+  const names = new Map([...seg.matchAll(/(\d+):"([0-9a-f]{8})"/g)].map((m) => [m[1], m[2]]));
   for (const m of seg.matchAll(/(\d+):"([0-9a-f]{16})"/g)) {
     paths.add(`/_next/static/chunks/${names.get(m[1]) ?? m[1]}.${m[2]}.js`);
   }
@@ -491,11 +583,11 @@ function parseLazyChunkPaths(webpackJs: string): string[] {
 // The encyclo chunk is found by content, not name: hashes change every deploy.
 const ENCYCLO_MARKERS = ["godan-ru", "all-terms", "if-you-see"];
 
-function tryExtractEncyclo(chunkJs: string): any | null {
+function tryExtractEncyclo(chunkJs: string): EncycloNamespace | null {
   if (!ENCYCLO_MARKERS.every((s) => chunkJs.includes(s))) return null;
   for (const m of chunkJs.matchAll(/JSON\.parse\('((?:[^'\\]|\\.)*)'\)/g)) {
     try {
-      const obj = JSON.parse(decodeJsSingleQuotedString(m[1]));
+      const obj = JSON.parse(decodeJsSingleQuotedString(m[1])) as EncycloNamespace;
       if (!(obj.terms && obj.structure && obj.register && obj.pos && obj.ui)) continue;
       // The namespace ships once per UI language (same keys, translated
       // values) — accept only the English one.
@@ -527,7 +619,7 @@ export async function fetchLegendSources(sessionCookie: string): Promise<BunproL
   }
 
   const eagerPaths = [...html.matchAll(/src="(\/_next\/static\/[^"]+\.js)"/g)].map((m) => m[1]);
-  let terms: BunproTermDict = {};
+  const terms: BunproTermDict = {};
   let webpackJs = "";
   for (const p of eagerPaths) {
     const js = await fetchBunproHtml(p, sessionCookie);

@@ -6,7 +6,7 @@
 // seeded into GrammarLegend by scripts/seed-grammar-legends.ts and served by
 // /api/grammar/legends; this file only renders it.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { renderTagged } from "@/components/TaggedText";
 import type { GrammarLegendDTO, GrammarLegendKey, GrammarLegendRowDTO } from "@/lib/grammar";
@@ -109,9 +109,16 @@ function GrammarLegendDialog({
 }) {
   const [legends, setLegends] = useState<LegendMap | null>(null);
   const [view, setView] = useState<GrammarLegendKey>(legend);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadLegends().then(setLegends);
+    let cancelled = false;
+    loadLegends().then((map) => {
+      if (!cancelled) setLegends(map);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -119,7 +126,14 @@ function GrammarLegendDialog({
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Move focus into the dialog on open and back to the trigger on close, so
+    // keyboard users aren't left tabbing through the page behind the overlay.
+    const trigger = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      trigger?.focus();
+    };
   }, [onClose]);
 
   const dto = legends?.[view];
@@ -130,10 +144,12 @@ function GrammarLegendDialog({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={dto?.title ?? "Legend"}
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        tabIndex={-1}
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4">

@@ -47,13 +47,21 @@ const SPREAD_GROUPS = ["radical", "kanji", "vocabulary"] as const;
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
+    // A 401 (expired session) or 500 also returns JSON, so blindly setting the
+    // parsed body used to crash the render on `summary.forecast`.
     fetch("/api/summary")
-      .then((r) => r.json())
-      .then(setSummary);
+      .then(async (r) => {
+        if (!r.ok) return setError(true);
+        setSummary(await r.json());
+      })
+      .catch(() => setError(true));
   }, []);
 
+  if (error)
+    return <p className="text-slate-500">Failed to load the dashboard — reload to retry.</p>;
   if (!summary) return <p className="text-slate-500">Loading…</p>;
 
   const forecastEntries = Object.entries(summary.forecast).sort(([a], [b]) =>
@@ -277,14 +285,25 @@ const PROGRESS_ROWS: {
 
 function LevelProgress({ currentLevel }: { currentLevel: number }) {
   const [level, setLevel] = useState(currentLevel);
-  const [subjects, setSubjects] = useState<LevelSubject[] | null>(null);
+  // Keyed to the level it was fetched for: switching levels shows the loading
+  // state without a synchronous reset, and a slow response for a previously
+  // selected level can't clobber the current one.
+  const [result, setResult] = useState<{ level: number; subjects: LevelSubject[] } | null>(null);
 
   useEffect(() => {
-    setSubjects(null);
+    let cancelled = false;
     fetch(`/api/levels/${level}`)
-      .then((r) => r.json())
-      .then((data) => setSubjects(data.subjects));
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setResult({ level, subjects: data.subjects });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [level]);
+
+  const subjects = result?.level === level ? result.subjects : null;
 
   const guru = (types: string[]) =>
     subjects?.filter((s) => types.includes(s.type) && (s.srsStage ?? 0) >= GURU_STAGE)

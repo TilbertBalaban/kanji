@@ -44,8 +44,11 @@ export async function PATCH(
   }
 
   try {
-    const item = await prisma.customVocab.update({
-      where: { id },
+    // Scoped to { id, userId } (like DELETE below) so the write itself can
+    // never cross users, and a concurrent delete yields a clean 404 instead
+    // of an unhandled P2025.
+    const { count } = await prisma.customVocab.updateMany({
+      where: { id, userId },
       data: {
         characters: input.characters,
         meanings: JSON.stringify(input.meanings),
@@ -53,6 +56,10 @@ export async function PATCH(
         notes: input.notes,
       },
     });
+    if (count === 0) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    const item = await prisma.customVocab.findUniqueOrThrow({ where: { id } });
     return NextResponse.json({ item: toCustomVocabDTO(item) });
   } catch (e) {
     if (e && typeof e === "object" && "code" in e && e.code === "P2002") {

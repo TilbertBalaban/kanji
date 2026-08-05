@@ -211,6 +211,24 @@ describe("evaluateAnswer — reading shakes", () => {
       );
     }
   });
+
+  it("lets non-kana fill a [bracketed] slot", () => {
+    const custom = subject({
+      type: "custom",
+      characters: "[years]さいです",
+      meanings: [meaning("I am ... years old", true, true)],
+      readings: [reading("[years]さいです", { accepted: true, primary: true })],
+    });
+    // The slot is meant to hold whatever the placeholder asks for — digits
+    // must not be bounced by the kana-only script gate.
+    expect(
+      evaluateAnswer({ questionType: "reading", response: "25さいです", subject: custom }).action,
+    ).toBe("pass");
+    // The literal part still has to match.
+    expect(
+      evaluateAnswer({ questionType: "reading", response: "25さいだよ", subject: custom }).action,
+    ).toBe("fail");
+  });
 });
 
 describe("evaluateAnswer — recall shakes", () => {

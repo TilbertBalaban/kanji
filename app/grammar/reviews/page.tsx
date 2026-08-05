@@ -51,6 +51,7 @@ function GrammarReviewsSession() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
+  const [loadFailed, setLoadFailed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // "Extra Study" over recent mistakes: same quiz UI, sourced from the mistake
@@ -68,7 +69,10 @@ function GrammarReviewsSession() {
 
   useEffect(() => {
     fetch(mistakesMode ? "/api/grammar/recent-mistakes" : "/api/grammar/reviews")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data: { items: ReviewItem[] }) => {
         const loaded: Item[] = data.items.map((entry) => ({
           data: entry,
@@ -77,7 +81,8 @@ function GrammarReviewsSession() {
         }));
         setItems(loaded);
         setIndex(pickIndex(loaded));
-      });
+      })
+      .catch(() => setLoadFailed(true));
   }, [mistakesMode]);
 
   useEffect(() => {
@@ -85,6 +90,7 @@ function GrammarReviewsSession() {
   }, [index, feedback]);
 
   const submitCompleted = useCallback(async (item: Item) => {
+    // Rejected fetch surfaces like an HTTP error — call sites use `void`.
     const res = await fetch("/api/grammar/reviews/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -92,8 +98,8 @@ function GrammarReviewsSession() {
         grammarPointId: item.data.grammarPoint.id,
         incorrectCount: item.missed ? 1 : 0,
       }),
-    });
-    if (!res.ok) {
+    }).catch(() => null);
+    if (!res || !res.ok) {
       setToast({ text: "Couldn't save that review — it may repeat later.", kind: "down" });
       setTimeout(() => setToast(null), 2500);
       return;
@@ -168,6 +174,8 @@ function GrammarReviewsSession() {
     }
   }, [items, index, input, feedback, advance, submitCompleted, mistakesMode]);
 
+  if (loadFailed)
+    return <p className="text-slate-500">Failed to load reviews — reload to retry.</p>;
   if (!items) return <p className="text-slate-500">Loading reviews…</p>;
 
   if (items.length === 0) {

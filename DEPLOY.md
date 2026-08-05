@@ -112,11 +112,16 @@ user id and initialize automatically on first sign-in. Each user saves their
 own WaniKani API token on `/profile` (stored in Clerk private metadata) and
 syncs from there.
 
-To carry over progress recorded under the old fixed roster, map the old name
-to the new Clerk user id (shown on the user's page in the Clerk dashboard):
+To carry over progress recorded under the old fixed roster (a one-time
+migration — there is no script for it anymore), rewrite the `userId` column of
+the user-scoped tables from the old name to the new Clerk user id (shown on
+the user's page in the Clerk dashboard):
 
-```bash
-npm run migrate:user -- Tilbert user_2abc123...
+```sql
+-- Repeat for: "Assignment", "ReviewLog", "ReviewStatSnapshot", "UserNote",
+-- "UserSynonym", "UserProgress", "CustomVocab", "GrammarProgress",
+-- "GrammarReviewLog"
+UPDATE "Assignment" SET "userId" = 'user_2abc123...' WHERE "userId" = 'Tilbert';
 ```
 
 ## Notes

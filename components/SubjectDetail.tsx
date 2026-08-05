@@ -176,10 +176,19 @@ function VisuallySimilarList({ items }: { items: RelatedSubject[] }) {
 }
 
 export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
-  const [detail, setDetail] = useState<SubjectDetailData | null>(null);
-  const [notFound, setNotFound] = useState(false);
+  // The result is keyed to the subject it was fetched for, so a slug change
+  // shows "Loading…" without a synchronous reset, and a slow response for a
+  // previous subject can never clobber the current one.
+  const [result, setResult] = useState<{
+    forKey: string;
+    detail: SubjectDetailData | null;
+    status: "ok" | "not-found" | "error";
+  } | null>(null);
+  // Bumped by ResetProgressButton to refetch the (changed) assignment state.
+  const [refresh, setRefresh] = useState(0);
 
-  const load = () => {
+  useEffect(() => {
+    let cancelled = false;
     // The route param may reach a client component already URL-encoded (e.g.
     // "%E4%B8%83" for 七), so decode first and encode exactly once — encoding a
     // raw kanji straight away would double-encode it and 404 the lookup.
@@ -189,19 +198,25 @@ export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
     } catch {
       // slug wasn't valid percent-encoding; use it as-is.
     }
-    return fetch(`/api/subjects/by/${kind}/${encodeURIComponent(key)}`).then(async (r) => {
-      if (!r.ok) return setNotFound(true);
-      setDetail(await r.json());
-    });
-  };
+    fetch(`/api/subjects/by/${kind}/${encodeURIComponent(key)}`)
+      .then(async (r) => {
+        if (cancelled) return;
+        if (!r.ok) return setResult({ forKey: `${kind}/${slug}`, detail: null, status: "not-found" });
+        setResult({ forKey: `${kind}/${slug}`, detail: await r.json(), status: "ok" });
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ forKey: `${kind}/${slug}`, detail: null, status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, slug, refresh]);
 
-  useEffect(() => {
-    setDetail(null);
-    setNotFound(false);
-    load();
-  }, [kind, slug]);
-
-  if (notFound) return <p className="text-slate-500">Subject not found.</p>;
+  const current = result?.forKey === `${kind}/${slug}` ? result : null;
+  if (current?.status === "not-found") return <p className="text-slate-500">Subject not found.</p>;
+  if (current?.status === "error")
+    return <p className="text-slate-500">Failed to load — check your connection and reload.</p>;
+  const detail = current?.detail;
   if (!detail) return <p className="text-slate-500">Loading…</p>;
 
   const { subject, note, assignment, reviewLogs, related } = detail;
@@ -250,7 +265,7 @@ export function SubjectDetail({ kind, slug }: { kind: string; slug: string }) {
           <div className="flex justify-end bg-white px-4 py-2">
             <ResetProgressButton
               resetUrl={`/api/subjects/${subject.id}/reset`}
-              onReset={load}
+              onReset={() => setRefresh((n) => n + 1)}
             />
           </div>
         )}

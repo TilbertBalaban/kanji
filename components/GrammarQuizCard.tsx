@@ -91,7 +91,9 @@ export function GrammarQuizCard({
               wanakana.toKana(fromCyrillicLayout(e.target.value), { IMEMode: true }),
             )
           }
-          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
+          // isComposing: an Enter that commits a native-IME composition must
+          // not also submit the (possibly partial) answer.
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && onSubmit()}
           placeholder="答え (kana)"
           className="w-full bg-transparent p-4 text-center text-xl outline-none"
           lang="ja"

@@ -13,6 +13,13 @@ import {
 
 const LEVEL_UP_THRESHOLD = 0.9; // pass 90% of a level's kanji to level up
 
+/**
+ * An expected business rejection (not due, unknown item, invalid setting) —
+ * routes map this to a 4xx. Anything else that escapes is a real server error
+ * and must surface as a 500, not be silently folded into the same bucket.
+ */
+export class ProgressionError extends Error {}
+
 export const EXTRA_LESSON_BATCH = 5; // opt-in batch size once the daily limit is reached
 
 // Defaults live on UserProgress (dailyLessonLimit/grammarDailyLessonLimit) so
@@ -67,7 +74,7 @@ export async function setLessonSettings(
       value < MIN_LESSON_LIMIT ||
       value > MAX_LESSON_LIMIT
     ) {
-      throw new Error(
+      throw new ProgressionError(
         `${key} must be an integer between ${MIN_LESSON_LIMIT} and ${MAX_LESSON_LIMIT}`,
       );
     }
@@ -77,7 +84,14 @@ export async function setLessonSettings(
     data.interleaveLessons = settings.interleaveLessons;
   }
   if (Object.keys(data).length === 0) return;
-  await prisma.userProgress.update({ where: { userId }, data });
+  // upsert: a missing UserProgress row (e.g. after a DB restore while the
+  // module-level init cache still remembers the user) must not turn a
+  // settings save into a P2025.
+  await prisma.userProgress.upsert({
+    where: { userId },
+    update: data,
+    create: { userId, currentLevel: 1, ...data },
+  });
 }
 
 /**
@@ -137,19 +151,49 @@ function startOfToday(now = new Date()): Date {
     d.setHours(0, 0, 0, 0);
     return d;
   }
+  // Resolve today's calendar date in the target zone, then find the UTC
+  // instant of that local midnight from the zone's offset. (Subtracting the
+  // elapsed wall-clock time instead is off by an hour on DST transition days.)
+  const [y, m, d] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(now)
+    .split("-")
+    .map(Number);
+  // Two rounds so an offset change at/near midnight itself converges.
+  let ts = Date.UTC(y, m - 1, d);
+  for (let i = 0; i < 2; i++) {
+    ts = Date.UTC(y, m - 1, d) - tzOffsetMs(tz, new Date(ts));
+  }
+  return new Date(ts);
+}
+
+/** The zone's UTC offset (ms, east positive) in effect at the given instant. */
+function tzOffsetMs(tz: string, at: Date): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
+  }).formatToParts(at);
   const get = (type: string) =>
     Number(parts.find((p) => p.type === type)?.value ?? 0);
-  const msIntoDay =
-    (((get("hour") % 24) * 60 + get("minute")) * 60 + get("second")) * 1000 +
-    now.getMilliseconds();
-  return new Date(now.getTime() - msIntoDay);
+  const asUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour") % 24,
+    get("minute"),
+    get("second"),
+  );
+  return asUtc - Math.floor(at.getTime() / 1000) * 1000;
 }
 
 /**
@@ -235,11 +279,11 @@ export async function completeReview(
     include: { subject: { select: { type: true, readings: true } } },
   });
   if (!assignment || !assignment.startedAt) {
-    throw new Error(`No started assignment for subject ${subjectId}`);
+    throw new ProgressionError(`No started assignment for subject ${subjectId}`);
   }
   const now = new Date();
   if (!assignment.availableAt || assignment.availableAt > now) {
-    throw new Error(`Review is not due for subject ${subjectId}`);
+    throw new ProgressionError(`Review is not due for subject ${subjectId}`);
   }
 
   // Burned items get a periodic recall check instead of a graded review: it
@@ -248,10 +292,18 @@ export async function completeReview(
     const incorrect =
       meaningIncorrectCount + readingIncorrectCount + recallIncorrectCount;
     await markActivity(userId, now);
-    await prisma.assignment.update({
-      where: { userId_subjectId: { userId, subjectId } },
+    const claimed = await prisma.assignment.updateMany({
+      where: {
+        userId,
+        subjectId,
+        srsStage: BURNED_STAGE,
+        availableAt: { lte: now },
+      },
       data: { availableAt: nextBurnedRecallAt(incorrect, now) },
     });
+    if (claimed.count === 0) {
+      throw new ProgressionError(`Review is not due for subject ${subjectId}`);
+    }
     return {
       startingStage: BURNED_STAGE,
       endingStage: BURNED_STAGE,
@@ -278,9 +330,17 @@ export async function completeReview(
 
   await markActivity(userId, now);
 
-  await prisma.$transaction([
-    prisma.assignment.update({
-      where: { userId_subjectId: { userId, subjectId } },
+  // The update re-checks stage + due date so a double-submitted completion
+  // (double click, client retry) can't advance the item twice: the loser's
+  // conditional update matches nothing and it rejects instead of re-applying.
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.assignment.updateMany({
+      where: {
+        userId,
+        subjectId,
+        srsStage: startingStage,
+        availableAt: { lte: now },
+      },
       data: {
         srsStage: endingStage,
         availableAt:
@@ -290,8 +350,11 @@ export async function completeReview(
         passedAt: justPassed ? now : assignment.passedAt,
         burnedAt: endingStage === BURNED_STAGE ? now : null,
       },
-    }),
-    prisma.reviewLog.create({
+    });
+    if (claimed.count === 0) {
+      throw new ProgressionError(`Review is not due for subject ${subjectId}`);
+    }
+    await tx.reviewLog.create({
       data: {
         userId,
         subjectId,
@@ -304,8 +367,8 @@ export async function completeReview(
         readingCorrectCount,
         recallCorrectCount,
       },
-    }),
-  ]);
+    });
+  });
 
   let unlockedIds: number[] = [];
   let leveledUpTo: number | null = null;
@@ -328,7 +391,7 @@ export async function resetAssignment(userId: string, subjectId: number) {
   const assignment = await prisma.assignment.findUnique({
     where: { userId_subjectId: { userId, subjectId } },
   });
-  if (!assignment) throw new Error(`No assignment for subject ${subjectId}`);
+  if (!assignment) throw new ProgressionError(`No assignment for subject ${subjectId}`);
   await prisma.assignment.update({
     where: { userId_subjectId: { userId, subjectId } },
     data: { srsStage: 0, startedAt: null, availableAt: null, passedAt: null, burnedAt: null },
@@ -350,11 +413,11 @@ export async function completeCustomVocabReview(
 ) {
   const item = await prisma.customVocab.findUnique({ where: { id } });
   if (!item || item.userId !== userId) {
-    throw new Error(`No custom vocab item ${id}`);
+    throw new ProgressionError(`No custom vocab item ${id}`);
   }
   const now = new Date();
   if (!item.availableAt || item.availableAt > now) {
-    throw new Error(`Review is not due for custom vocab item ${id}`);
+    throw new ProgressionError(`Review is not due for custom vocab item ${id}`);
   }
 
   const incorrect =
@@ -362,10 +425,13 @@ export async function completeCustomVocabReview(
 
   if (item.srsStage === BURNED_STAGE) {
     await markActivity(userId, now);
-    await prisma.customVocab.update({
-      where: { id },
+    const claimed = await prisma.customVocab.updateMany({
+      where: { id, userId, srsStage: BURNED_STAGE, availableAt: { lte: now } },
       data: { availableAt: nextBurnedRecallAt(incorrect, now) },
     });
+    if (claimed.count === 0) {
+      throw new ProgressionError(`Review is not due for custom vocab item ${id}`);
+    }
     return { startingStage: BURNED_STAGE, endingStage: BURNED_STAGE };
   }
 
@@ -375,8 +441,9 @@ export async function completeCustomVocabReview(
 
   await markActivity(userId, now);
 
-  await prisma.customVocab.update({
-    where: { id },
+  // Conditional on stage + due date, so a double-submit can't advance twice.
+  const claimed = await prisma.customVocab.updateMany({
+    where: { id, userId, srsStage: startingStage, availableAt: { lte: now } },
     data: {
       srsStage: endingStage,
       availableAt:
@@ -387,6 +454,9 @@ export async function completeCustomVocabReview(
       burnedAt: endingStage === BURNED_STAGE ? now : null,
     },
   });
+  if (claimed.count === 0) {
+    throw new ProgressionError(`Review is not due for custom vocab item ${id}`);
+  }
 
   return { startingStage, endingStage };
 }
@@ -400,7 +470,7 @@ export async function completeCustomVocabReview(
 export async function resetCustomVocab(userId: string, id: number) {
   const item = await prisma.customVocab.findUnique({ where: { id } });
   if (!item || item.userId !== userId) {
-    throw new Error(`No custom vocab item ${id}`);
+    throw new ProgressionError(`No custom vocab item ${id}`);
   }
   const now = new Date();
   await prisma.customVocab.update({
@@ -550,14 +620,24 @@ export async function startLessons(userId: string, subjectIds: number[]) {
     lessonsDoneToday(userId),
   ]);
   const remainingToday = Math.max(0, dailyLessonLimit - doneToday);
-  const allowed = Math.max(remainingToday, EXTRA_LESSON_BATCH);
+  // Within the daily limit, allow exactly what's left; once it's hit, allow
+  // one opt-in extra batch per request. (Math.max here would let a batch of
+  // EXTRA_LESSON_BATCH through even when the configured limit is smaller.)
+  const allowed = remainingToday > 0 ? remainingToday : EXTRA_LESSON_BATCH;
   const ids = subjectIds.slice(0, allowed);
   if (ids.length === 0) return;
 
   const now = new Date();
   await markActivity(userId, now);
   await prisma.assignment.updateMany({
-    where: { userId, subjectId: { in: ids }, startedAt: null },
+    // unlockedAt guards a hand-crafted request from starting a locked item
+    // that a WaniKani sync imported with unlocked_at: null.
+    where: {
+      userId,
+      subjectId: { in: ids },
+      startedAt: null,
+      unlockedAt: { not: null },
+    },
     data: {
       srsStage: 1,
       startedAt: now,
@@ -585,11 +665,11 @@ export async function completeGrammarReview(
     where: { userId_grammarPointId: { userId, grammarPointId } },
   });
   if (!progress || !progress.startedAt) {
-    throw new Error(`No started grammar progress for point ${grammarPointId}`);
+    throw new ProgressionError(`No started grammar progress for point ${grammarPointId}`);
   }
   const now = new Date();
   if (!progress.availableAt || progress.availableAt > now) {
-    throw new Error(`Review is not due for grammar point ${grammarPointId}`);
+    throw new ProgressionError(`Review is not due for grammar point ${grammarPointId}`);
   }
 
   const sentenceCount = await prisma.grammarSentence.count({
@@ -600,13 +680,21 @@ export async function completeGrammarReview(
 
   if (progress.srsStage === BURNED_STAGE) {
     await markActivity(userId, now);
-    await prisma.grammarProgress.update({
-      where: { userId_grammarPointId: { userId, grammarPointId } },
+    const claimed = await prisma.grammarProgress.updateMany({
+      where: {
+        userId,
+        grammarPointId,
+        srsStage: BURNED_STAGE,
+        availableAt: { lte: now },
+      },
       data: {
         availableAt: nextBurnedRecallAt(incorrectCount, now),
         sentenceCursor: nextCursor,
       },
     });
+    if (claimed.count === 0) {
+      throw new ProgressionError(`Review is not due for grammar point ${grammarPointId}`);
+    }
     return { startingStage: BURNED_STAGE, endingStage: BURNED_STAGE };
   }
 
@@ -616,9 +704,15 @@ export async function completeGrammarReview(
 
   await markActivity(userId, now);
 
-  await prisma.$transaction([
-    prisma.grammarProgress.update({
-      where: { userId_grammarPointId: { userId, grammarPointId } },
+  // Conditional on stage + due date, so a double-submit can't advance twice.
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.grammarProgress.updateMany({
+      where: {
+        userId,
+        grammarPointId,
+        srsStage: startingStage,
+        availableAt: { lte: now },
+      },
       data: {
         srsStage: endingStage,
         availableAt:
@@ -629,8 +723,11 @@ export async function completeGrammarReview(
         burnedAt: endingStage === BURNED_STAGE ? now : null,
         sentenceCursor: nextCursor,
       },
-    }),
-    prisma.grammarReviewLog.create({
+    });
+    if (claimed.count === 0) {
+      throw new ProgressionError(`Review is not due for grammar point ${grammarPointId}`);
+    }
+    await tx.grammarReviewLog.create({
       data: {
         userId,
         grammarPointId,
@@ -639,8 +736,8 @@ export async function completeGrammarReview(
         incorrectCount,
         correctCount: 1,
       },
-    }),
-  ]);
+    });
+  });
 
   return { startingStage, endingStage };
 }
@@ -675,7 +772,9 @@ export async function startGrammarLessons(
     grammarLessonsDoneToday(userId),
   ]);
   const remainingToday = Math.max(0, grammarDailyLessonLimit - doneToday);
-  const allowed = Math.max(remainingToday, EXTRA_LESSON_BATCH);
+  // Same rule as startLessons: the extra batch only opens up once the daily
+  // limit is actually exhausted.
+  const allowed = remainingToday > 0 ? remainingToday : EXTRA_LESSON_BATCH;
 
   const eligible = await prisma.grammarPoint.findMany({
     where: { progress: { none: { userId } } },

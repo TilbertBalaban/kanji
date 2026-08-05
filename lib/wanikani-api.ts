@@ -14,6 +14,9 @@ export async function wkFetch<T>(
   attempt = 1,
 ): Promise<T> {
   const res = await fetch(url, {
+    // 30s cap so a hung upstream can't stall a request handler indefinitely;
+    // callers may still pass their own signal to override.
+    signal: AbortSignal.timeout(30_000),
     ...init,
     headers: {
       Authorization: `Bearer ${apiKey}`,

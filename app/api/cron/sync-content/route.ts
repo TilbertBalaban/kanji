@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { mirrorAssetsToR2 } from "@/lib/asset-mirror";
 import { syncContentFromWaniKani } from "@/lib/content-sync";
@@ -15,7 +16,14 @@ const LOOKBACK_DAYS = 30;
 // run manually with curl.
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  const header = req.headers.get("authorization") ?? "";
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const got = Buffer.from(header);
+  if (
+    !secret ||
+    expected.length !== got.length ||
+    !timingSafeEqual(expected, got)
+  ) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

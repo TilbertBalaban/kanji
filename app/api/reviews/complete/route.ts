@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { completeReview } from "@/lib/progression";
+import { completeReview, ProgressionError } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export async function POST(req: NextRequest) {
@@ -35,6 +35,12 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json(result);
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 422 });
+    // Only expected business rejections become a 422; an infrastructure
+    // failure (DB timeout etc.) must surface as a 500 so the client retries
+    // instead of treating the review as permanently rejected.
+    if (e instanceof ProgressionError) {
+      return NextResponse.json({ error: e.message }, { status: 422 });
+    }
+    throw e;
   }
 }

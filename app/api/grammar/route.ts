@@ -14,6 +14,9 @@ export async function GET() {
   const { userId, response } = await requireUserId();
   if (response) return response;
 
+  // Resolved first: `await` inside the Promise.all array literal would
+  // serialize this round trip ahead of every query in the batch.
+  const dueBefore = await reviewsDueBefore(userId);
   const [points, progressRows, dueCount, lessonCount, doneToday, { grammarDailyLessonLimit }] =
     await Promise.all([
       prisma.grammarPoint.findMany({
@@ -34,7 +37,7 @@ export async function GET() {
         select: { grammarPointId: true, srsStage: true, availableAt: true },
       }),
       prisma.grammarProgress.count({
-        where: { userId, availableAt: { lte: await reviewsDueBefore(userId) } },
+        where: { userId, availableAt: { lte: dueBefore } },
       }),
       prisma.grammarPoint.count({ where: { progress: { none: { userId } } } }),
       grammarLessonsDoneToday(userId),

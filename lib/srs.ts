@@ -177,6 +177,20 @@ function tolerance(len: number): number {
   return 3;
 }
 
+// Fuzzy matching must never bridge a negation: "possible" is 2 edits from
+// "impossible" (within tolerance 3), but it's the opposite meaning, and
+// accepting it would silently advance the SRS on a wrong answer. Applies when
+// one side is exactly the other minus a negating prefix.
+const NEGATION_PREFIXES = ["un", "in", "im", "ir", "il", "non", "dis", "not"];
+
+function negationMismatch(guess: string, target: string): boolean {
+  const [shorter, longer] =
+    guess.length <= target.length ? [guess, target] : [target, guess];
+  if (shorter.length === 0 || !longer.endsWith(shorter)) return false;
+  const prefix = longer.slice(0, longer.length - shorter.length).trim();
+  return NEGATION_PREFIXES.includes(prefix);
+}
+
 export function checkMeaning(
   input: string,
   meanings: Meaning[],
@@ -203,6 +217,8 @@ export function checkMeaning(
 
   for (const answer of accepted) {
     const target = normalize(answer);
+    if (guess === target) return "correct";
+    if (negationMismatch(guess, target)) continue;
     if (levenshtein(guess, target) <= tolerance(target.length)) return "correct";
   }
   return "incorrect";

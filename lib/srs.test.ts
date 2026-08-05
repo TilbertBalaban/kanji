@@ -131,6 +131,22 @@ describe("checkMeaning", () => {
     expect(checkMeaning("oen", short)).toBe("incorrect");
   });
 
+  it("never bridges a negating prefix via typo tolerance", () => {
+    const impossible: Meaning[] = [
+      { meaning: "Impossible", primary: true, acceptedAnswer: true },
+    ];
+    // "possible" is only 2 edits from "impossible" but means the opposite.
+    expect(checkMeaning("possible", impossible)).toBe("incorrect");
+    expect(checkMeaning("impossible", impossible)).toBe("correct");
+    expect(checkMeaning("imposible", impossible)).toBe("correct"); // real typo
+
+    const unpleasant: Meaning[] = [
+      { meaning: "Unpleasant", primary: true, acceptedAnswer: true },
+    ];
+    expect(checkMeaning("pleasant", unpleasant)).toBe("incorrect");
+    expect(checkMeaning("unpleasant", unpleasant)).toBe("correct");
+  });
+
   it("honors whitelist and blacklist aux meanings", () => {
     const aux: AuxMeaning[] = [
       { meaning: "earth", type: "whitelist" },

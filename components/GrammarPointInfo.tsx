@@ -5,7 +5,7 @@
 // a lesson shows exactly the same info a user would find on the detail page.
 
 import Link from "next/link";
-import { Fragment, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { LegendInfoButton } from "@/components/GrammarLegendModal";
 import { renderTagged } from "@/components/TaggedText";
 import {
@@ -85,6 +85,8 @@ export function EmphasisText({ text }: { text: string }) {
 
 function SentenceAudioButton({ url }: { url: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Stop the clip when the button unmounts (next question, panel closed).
+  useEffect(() => () => audioRef.current?.pause(), []);
   const play = () => {
     audioRef.current?.pause();
     audioRef.current = new Audio(url);

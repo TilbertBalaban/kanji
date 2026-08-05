@@ -6,7 +6,7 @@
 // multiple content types) — we group by reading, then by voice actor, and pick
 // a browser-friendly file to play (mpeg over webm).
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { PronunciationAudio } from "@/lib/audio";
 
 interface Speaker {
@@ -47,10 +47,19 @@ function groupByReading(audioUrls: PronunciationAudio[]): ReadingGroup[] {
 
 function SpeakerButton({ speaker }: { speaker: Speaker }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Recreate the element if the URL changes (same voice actor, different
+  // subject), and stop playback when the button unmounts so a clip doesn't
+  // keep playing over the next screen.
+  useEffect(() => {
+    audioRef.current = null;
+    return () => audioRef.current?.pause();
+  }, [speaker.url]);
   const play = () => {
     if (!audioRef.current) audioRef.current = new Audio(speaker.url);
     audioRef.current.currentTime = 0;
-    void audioRef.current.play();
+    // Rejected on rapid re-clicks (AbortError) or pre-gesture autoplay
+    // (NotAllowedError) — neither is worth surfacing.
+    audioRef.current.play().catch(() => {});
   };
   return (
     <button

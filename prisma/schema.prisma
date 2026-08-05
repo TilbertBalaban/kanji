@@ -39,6 +39,10 @@ model Subject {
   userNotes    UserNote[]
 
   @@index([level, type])
+  // Subject-detail lookups resolve /kanji/<char> etc. by (type, characters),
+  // and radicals by slug — without these every page view scans the table.
+  @@index([type, characters])
+  @@index([slug])
 }
 
 // Per-user free-form notes for a subject (WaniKani "Meaning Note" / "Reading
@@ -87,6 +91,11 @@ model Assignment {
   @@index([availableAt])
   @@index([srsStage])
   @@index([userId])
+  // The hot paths (due reviews, lesson queue, forecast) all filter on the
+  // user plus one of these columns — same shape GrammarProgress/CustomVocab
+  // already index.
+  @@index([userId, availableAt])
+  @@index([userId, startedAt])
 }
 
 model ReviewLog {
@@ -109,6 +118,9 @@ model ReviewLog {
 
   @@index([createdAt])
   @@index([userId])
+  // Recent-mistakes and accuracy queries filter (userId, createdAt) on this
+  // append-only table — it grows fastest of all.
+  @@index([userId, createdAt])
 }
 
 // Last-seen cumulative answer counts from WaniKani's review_statistics, one
@@ -298,4 +310,5 @@ model GrammarReviewLog {
 
   @@index([createdAt])
   @@index([userId])
+  @@index([userId, createdAt])
 }

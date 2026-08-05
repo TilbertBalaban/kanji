@@ -135,8 +135,10 @@ function LessonsSession() {
   // items missed in the past 24h, with no daily-limit gating and no SRS change.
   const mistakesMode = useMistakesMode();
 
+  // Callers that replace an existing phase set setPhase("loading") themselves —
+  // load() itself only sets state once the response arrives, so the mount
+  // effect doesn't set state synchronously (react-hooks/set-state-in-effect).
   const load = useCallback((extra = false) => {
-    setPhase("loading");
     if (mistakesMode) {
       fetch("/api/recent-mistakes")
         .then((r) => r.json())
@@ -194,11 +196,14 @@ function LessonsSession() {
       setPhase("done");
       return;
     }
+    setPhase("loading");
+    // A failed completion is swallowed — the refetch just serves the same
+    // batch again instead of stranding the quiz on an unhandled rejection.
     await fetch("/api/lessons/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ subjectIds: subjects.map((s) => s.id) }),
-    });
+    }).catch(() => {});
     load();
   }, [subjects, load, mistakesMode]);
 
@@ -288,7 +293,10 @@ function LessonsSession() {
           {doneToday} done today · {totalAvailable} more waiting in the queue.
         </p>
         <button
-          onClick={() => load(true)}
+          onClick={() => {
+            setPhase("loading");
+            load(true);
+          }}
           className="mt-6 rounded-lg bg-pink-600 px-6 py-3 text-white hover:bg-pink-700"
         >
           Do {extraBatchSize} more lessons

@@ -64,6 +64,7 @@ function ReviewsSession() {
   const [showDetails, setShowDetails] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [sessionWrong, setSessionWrong] = useState(0);
+  const [loadFailed, setLoadFailed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // "Extra Study" over recent mistakes: same quiz UI, sourced from the mistake
@@ -81,7 +82,10 @@ function ReviewsSession() {
 
   useEffect(() => {
     fetch(mistakesMode ? "/api/recent-mistakes" : "/api/reviews")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data: { subjects: ReviewSubject[] }) => {
         const loaded: Item[] = data.subjects.map((subject) => {
           const tasks = tasksForSubject(subject);
@@ -99,7 +103,8 @@ function ReviewsSession() {
         });
         setItems(loaded);
         setTask(pickTask(loaded));
-      });
+      })
+      .catch(() => setLoadFailed(true));
   }, [mistakesMode]);
 
   useEffect(() => {
@@ -107,6 +112,9 @@ function ReviewsSession() {
   }, [task, feedback]);
 
   const submitCompleted = useCallback(async (item: Item) => {
+    // A rejected fetch (network blip) must surface like an HTTP error — the
+    // call sites use `void submitCompleted(...)`, so an unhandled rejection
+    // would silently lose the completed review.
     const res = await fetch("/api/reviews/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -116,8 +124,8 @@ function ReviewsSession() {
         readingIncorrectCount: item.readingWrong,
         recallIncorrectCount: item.recallWrong,
       }),
-    });
-    if (!res.ok) {
+    }).catch(() => null);
+    if (!res || !res.ok) {
       setToast({ text: "Couldn't save that review — it may repeat later.", kind: "down" });
       setTimeout(() => setToast(null), 2500);
       return;
@@ -228,6 +236,8 @@ function ReviewsSession() {
     }
   }, [items, task, input, feedback, advance, submitCompleted, mistakesMode]);
 
+  if (loadFailed)
+    return <p className="text-slate-500">Failed to load reviews — reload to retry.</p>;
   if (!items) return <p className="text-slate-500">Loading reviews…</p>;
 
   // Each question (meaning / reading / recall) counts as one step of progress.

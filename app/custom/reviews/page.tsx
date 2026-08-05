@@ -67,6 +67,7 @@ export default function CustomReviewsPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
+  const [loadFailed, setLoadFailed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -80,7 +81,10 @@ export default function CustomReviewsPage() {
 
   useEffect(() => {
     fetch("/api/custom-vocab/reviews")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data: { items: ReviewVocabDTO[] }) => {
         const loaded: Item[] = data.items.map((vocab) => {
           const tasks = tasksForCustomVocab(vocab);
@@ -111,7 +115,8 @@ export default function CustomReviewsPage() {
         });
         setItems(loaded);
         setTask(pickTask(loaded));
-      });
+      })
+      .catch(() => setLoadFailed(true));
   }, []);
 
   useEffect(() => {
@@ -119,6 +124,7 @@ export default function CustomReviewsPage() {
   }, [task, feedback]);
 
   const submitCompleted = useCallback(async (item: Item) => {
+    // Rejected fetch surfaces like an HTTP error — call sites use `void`.
     const res = await fetch("/api/custom-vocab/reviews/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -128,8 +134,8 @@ export default function CustomReviewsPage() {
         readingIncorrectCount: item.readingWrong,
         recallIncorrectCount: item.recallWrong,
       }),
-    });
-    if (!res.ok) {
+    }).catch(() => null);
+    if (!res || !res.ok) {
       setToast({ text: "Couldn't save that review — it may repeat later.", kind: "down" });
       setTimeout(() => setToast(null), 2500);
       return;
@@ -237,6 +243,8 @@ export default function CustomReviewsPage() {
     }
   }, [items, task, input, feedback, advance, submitCompleted]);
 
+  if (loadFailed)
+    return <p className="text-slate-500">Failed to load reviews — reload to retry.</p>;
   if (!items) return <p className="text-slate-500">Loading custom reviews…</p>;
 
   if (items.length === 0) {

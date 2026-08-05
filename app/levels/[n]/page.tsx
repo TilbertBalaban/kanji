@@ -29,13 +29,23 @@ const SECTIONS: { type: string[]; title: string }[] = [
 export default function LevelPage({ params }: { params: Promise<{ n: string }> }) {
   const { n } = use(params);
   const [subjects, setSubjects] = useState<LevelSubject[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const validLevel = /^\d+$/.test(n) && Number(n) >= 1 && Number(n) <= MAX_LEVEL;
 
   useEffect(() => {
+    if (!validLevel) return;
     fetch(`/api/levels/${n}`)
-      .then((r) => r.json())
-      .then((data) => setSubjects(data.subjects));
-  }, [n]);
+      .then(async (r) => {
+        if (!r.ok) return setFailed(true);
+        const data = await r.json();
+        setSubjects(data.subjects);
+      })
+      .catch(() => setFailed(true));
+  }, [n, validLevel]);
 
+  if (!validLevel) return <p className="text-slate-500">Level “{n}” doesn’t exist.</p>;
+  if (failed)
+    return <p className="text-slate-500">Failed to load level {n} — reload to retry.</p>;
   if (!subjects) return <p className="text-slate-500">Loading level {n}…</p>;
 
   const level = Number(n);

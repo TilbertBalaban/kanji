@@ -40,17 +40,26 @@ const LEVELS = [5, 4, 3, 2, 1];
 export default function GrammarPage() {
   const [data, setData] = useState<GrammarSummary | null>(null);
   const [analytics, setAnalytics] = useState<GrammarAnalytics | null>(null);
+  const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
   const [openLevels, setOpenLevels] = useState<Set<number>>(new Set(LEVELS));
   const [openLessons, setOpenLessons] = useState<Set<number>>(new Set());
 
   useEffect(() => {
+    // A 401/500 also returns JSON (an { error } object); setting it as data
+    // used to crash the render on `data.points`.
     fetch("/api/grammar")
-      .then((r) => r.json())
-      .then(setData);
+      .then(async (r) => {
+        if (!r.ok) return setError(true);
+        setData(await r.json());
+      })
+      .catch(() => setError(true));
+    // Analytics are decorative — a failure just leaves the tiles hidden.
     fetch("/api/grammar/summary")
-      .then((r) => r.json())
-      .then(setAnalytics);
+      .then(async (r) => {
+        if (r.ok) setAnalytics(await r.json());
+      })
+      .catch(() => {});
   }, []);
 
   const q = query.trim().toLowerCase();
@@ -89,6 +98,8 @@ export default function GrammarPage() {
     return numbering;
   }, [data]);
 
+  if (error)
+    return <p className="text-slate-500">Failed to load grammar — reload to retry.</p>;
   if (!data) return <p className="text-slate-500">Loading grammar…</p>;
 
   const toggleLevel = (level: number) => {

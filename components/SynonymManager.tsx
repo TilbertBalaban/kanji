@@ -35,7 +35,7 @@ export function SynonymManager({
     onChange?.(next);
   };
 
-  const send = async (method: "POST" | "DELETE", synonym: string) => {
+  const send = async (method: "POST" | "DELETE", synonym: string): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
@@ -47,11 +47,13 @@ export function SynonymManager({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data?.error ?? "Something went wrong");
-        return;
+        return false;
       }
       commit(data.synonyms as string[]);
+      return true;
     } catch {
       setError("Network error");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -64,8 +66,8 @@ export function SynonymManager({
       setInput("");
       return;
     }
-    await send("POST", value);
-    setInput("");
+    // Keep the typed text on failure so the user can retry without retyping.
+    if (await send("POST", value)) setInput("");
     inputRef.current?.focus();
   };
 
@@ -112,7 +114,7 @@ export function SynonymManager({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 void add();
               }

@@ -178,8 +178,12 @@ export async function syncContentFromWaniKani(
         }
         return prisma.subject.update({ where: { id: s.id }, data: update });
       });
-    if (updates.length > 0) {
-      await prisma.$transaction(updates);
+    // Chunked: a WaniKani page holds up to 1000 subjects, and a single
+    // 1000-statement transaction is a likely timeout on a pooled serverless
+    // Postgres — and a timeout would lose the whole page's updates.
+    const UPDATE_CHUNK = 100;
+    for (let i = 0; i < updates.length; i += UPDATE_CHUNK) {
+      await prisma.$transaction(updates.slice(i, i + UPDATE_CHUNK));
     }
     for (const s of visible) {
       updatedSubjects.push({

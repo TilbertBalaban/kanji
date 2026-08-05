@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLessonSettings, setLessonSettings } from "@/lib/progression";
+import { getLessonSettings, ProgressionError, setLessonSettings } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -23,11 +23,9 @@ export async function PUT(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const { dailyLessonLimit, grammarDailyLessonLimit, interleaveLessons } = body ?? {};
-  if (
-    (dailyLessonLimit !== undefined && typeof dailyLessonLimit !== "number") ||
-    (grammarDailyLessonLimit !== undefined && typeof grammarDailyLessonLimit !== "number")
-  ) {
-    return NextResponse.json({ error: "Limits must be numbers" }, { status: 400 });
+  const validLimit = (v: unknown) => v === undefined || (typeof v === "number" && Number.isInteger(v));
+  if (!validLimit(dailyLessonLimit) || !validLimit(grammarDailyLessonLimit)) {
+    return NextResponse.json({ error: "Limits must be whole numbers" }, { status: 400 });
   }
   if (interleaveLessons !== undefined && typeof interleaveLessons !== "boolean") {
     return NextResponse.json(
@@ -43,8 +41,11 @@ export async function PUT(req: NextRequest) {
       interleaveLessons,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not save settings";
-    return NextResponse.json({ error: message }, { status: 400 });
+    // Validation problems are the user's 400; anything else is a real 500.
+    if (e instanceof ProgressionError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
   }
 
   const settings = await getLessonSettings(userId);

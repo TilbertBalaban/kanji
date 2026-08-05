@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { completeGrammarReview } from "@/lib/progression";
+import { completeGrammarReview, ProgressionError } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export async function POST(req: NextRequest) {
@@ -19,6 +19,10 @@ export async function POST(req: NextRequest) {
     const result = await completeGrammarReview(userId, grammarPointId, incorrectCount);
     return NextResponse.json(result);
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 422 });
+    // 422 only for expected business rejections; anything else is a real 500.
+    if (e instanceof ProgressionError) {
+      return NextResponse.json({ error: e.message }, { status: 422 });
+    }
+    throw e;
   }
 }

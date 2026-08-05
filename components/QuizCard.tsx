@@ -135,7 +135,9 @@ export function QuizCard({
                 onInputChange(raw, raw);
               }
             }}
-            onKeyDown={(e) => e.key === "Enter" && onSubmit()}
+            // isComposing: an Enter that commits a native-IME composition must
+            // not also submit the (possibly partial) answer.
+            onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && onSubmit()}
             placeholder={wantsKana ? "答え (kana)" : "Your answer (English)"}
             className="w-full bg-transparent p-4 text-center text-xl outline-none"
             lang={wantsKana ? "ja" : "en"}

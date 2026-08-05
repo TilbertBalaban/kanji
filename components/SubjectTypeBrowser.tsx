@@ -56,17 +56,28 @@ export function SubjectTypeBrowser({
   basePath: string;
 }) {
   const levels = useSearchParams().get("levels") ?? "1-10";
-  const [from, to] = levels.split("-").map(Number);
+  // A malformed ?levels= (e.g. "foo") would otherwise produce NaN–undefined
+  // requests with no way back; fall back to the default range instead.
+  const parsed = levels.match(/^(\d+)-(\d+)$/);
+  const from = parsed ? Number(parsed[1]) : 1;
+  const to = parsed ? Number(parsed[2]) : 10;
   const requestKey = `${type}:${from}-${to}`;
-  const [result, setResult] = useState<{ key: string; subjects: BrowseSubject[] } | null>(null);
+  const [result, setResult] = useState<{
+    key: string;
+    subjects: BrowseSubject[] | "error";
+  } | null>(null);
   const color = TYPE_COLORS[type];
 
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/subject-types/${type}?from=${from}&to=${to}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) setResult({ key: requestKey, subjects: data.subjects });
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        if (!cancelled) setResult({ key: requestKey, subjects: data.subjects ?? [] });
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ key: requestKey, subjects: "error" });
       });
     return () => {
       cancelled = true;
@@ -74,7 +85,8 @@ export function SubjectTypeBrowser({
   }, [requestKey, type, from, to]);
 
   // Only show data matching the current range; otherwise we're loading.
-  const subjects = result?.key === requestKey ? result.subjects : null;
+  const current = result?.key === requestKey ? result.subjects : null;
+  const subjects = current === "error" ? null : current;
 
   const byLevel = new Map<number, BrowseSubject[]>();
   for (const s of subjects ?? []) {
@@ -121,7 +133,11 @@ export function SubjectTypeBrowser({
         ))}
       </div>
 
-      {!subjects ? (
+      {current === "error" ? (
+        <p className="text-slate-500">
+          Failed to load {title.toLowerCase()} — check your connection and reload.
+        </p>
+      ) : !subjects ? (
         <p className="text-slate-500">
           Loading {title.toLowerCase()} for levels {from}–{to}…
         </p>

@@ -65,7 +65,12 @@ export function ProfileForm({ initialKeyHint }: { initialKeyHint: string | null 
       if (res.ok) {
         setKeyHint(null);
         setMsg({ ok: true, text: "Token removed" });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setMsg({ ok: false, text: data?.error ?? "Could not remove API token" });
       }
+    } catch {
+      setMsg({ ok: false, text: "Network error" });
     } finally {
       setSaving(false);
     }

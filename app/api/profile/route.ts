@@ -37,6 +37,12 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: true, keyHint: null });
   }
 
+  // WaniKani tokens are 36-char UUIDs; bound the input so arbitrary large or
+  // exotic strings never reach the upstream request.
+  if (apiKey.length > 64 || !/^[\x21-\x7e]+$/.test(apiKey)) {
+    return NextResponse.json({ error: "That doesn't look like a WaniKani API token" }, { status: 400 });
+  }
+
   try {
     const username = await validateApiKey(apiKey);
     await setStoredApiKey(userId, apiKey);

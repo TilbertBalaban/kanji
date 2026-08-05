@@ -13,6 +13,7 @@ import { toHiragana as wkToHiragana, toRomaji, stripOkurigana } from "wanakana";
 import {
   checkMeaning,
   checkReading,
+  hasReadingSlots,
   normalizeAnswer,
   type AuxMeaning,
   type Meaning,
@@ -307,7 +308,10 @@ function getEndingVowel(mora: string): string {
 function convertDashesToVowels(kana: string): string {
   let newKana = "";
   for (let i = 0; i < kana.length; i++) {
-    newKana += kana[i] === "ー" ? toHiragana(getEndingVowel(kana[i - 1])) : toHiragana(kana[i]);
+    // A leading ー has no preceding mora to take a vowel from — keep it as-is
+    // (custom-vocab readings are user-supplied and may start with ー).
+    newKana +=
+      kana[i] === "ー" && i > 0 ? toHiragana(getEndingVowel(kana[i - 1])) : toHiragana(kana[i]);
   }
   return newKana;
 }
@@ -354,11 +358,14 @@ function checkThatVerbStartsWithTo({
     return normalized.startsWith("to ") && normalized.replace("to ", "") === lower;
   });
   if (matched && subject.characters) {
-    const okurigana =
-      subject.characters.replace(stripOkurigana(subject.characters), "") || subject.characters;
+    const okurigana = subject.characters.replace(stripOkurigana(subject.characters), "");
     return {
       action: "retry",
-      message: `Almost! It ends in ${okurigana[okurigana.length - 1]}, so it’s a verb. Please type “${matched}”.`,
+      // A kanji-only verb (勉強, 電話…) has no okurigana to point at — skip
+      // the "ends in X" clause rather than naming its last kanji.
+      message: okurigana
+        ? `Almost! It ends in ${okurigana[okurigana.length - 1]}, so it’s a verb. Please type “${matched}”.`
+        : `Almost! It’s a verb. Please type “${matched}”.`,
     };
   }
   return null;
@@ -556,9 +563,14 @@ export function evaluateAnswer({
 
   // WaniKani refuses to even grade an answer whose script doesn't match the
   // question — silent shake. (Reading answers may carry a trailing pending "n".)
+  // A custom-vocab reading with a [bracketed] slot is exempt: the slot is
+  // *meant* to be filled with whatever the placeholder asks for ("25さいです"
+  // for "[years]さいです"), so non-kana there is a fair answer, and the
+  // literal parts are still enforced by checkReading's slot matching.
   if (questionType === "reading") {
+    const slotted = readingsForRecall(subject).some((r) => hasReadingSlots(r.reading));
     const withoutTrailingN = trimmed.endsWith("n") ? trimmed.slice(0, -1) : trimmed;
-    if (withoutTrailingN && !KANA_ONLY.test(withoutTrailingN)) {
+    if (!slotted && withoutTrailingN && !KANA_ONLY.test(withoutTrailingN)) {
       return { action: "retry", message: null };
     }
   } else if (/[぀-ゟ゠-ヿ]/.test(trimmed)) {

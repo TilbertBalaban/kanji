@@ -275,9 +275,11 @@ export async function syncFromWaniKani(
         // The API doesn't expose per-review stages; approximate with the
         // stage recorded at the previous sync (or the minimum move the
         // review outcome implies).
+        // Clamped to the 0-9 stage model: a burned (9) item with a mistake
+        // must not record a startingStage of 10.
         startingStage:
           prevStageBySubject.get(d.subject_id) ??
-          (hadMistake ? endingStage + 1 : Math.max(1, endingStage - 1)),
+          (hadMistake ? Math.min(9, endingStage + 1) : Math.max(1, endingStage - 1)),
         endingStage,
         meaningCorrectCount,
         meaningIncorrectCount,

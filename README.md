@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KaniLocal
 
-## Getting Started
+A personal WaniKani-style Japanese SRS app: kanji/radical/vocabulary reviews
+synced from a real WaniKani account, plus a Bunpro-style grammar path, custom
+vocabulary, and KaniWani-style recall prompts. Next.js (App Router) + Prisma on
+Neon Postgres + Clerk auth, deployed on Vercel with assets mirrored to
+Cloudflare R2.
 
-First, run the development server:
+For personal study use only — the WaniKani and Bunpro content it syncs is not
+redistributable.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Setup
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. `cp .env.example .env` and fill it in (Neon, Clerk, WaniKani API key, R2 —
+   each variable is documented in the file).
+2. `npm install` (runs `prisma generate`).
+3. `npm run migrate:deploy` to create the schema.
+4. `npm run seed` to load the WaniKani subject catalog, then
+   `npm run mirror:assets` to mirror images/audio to R2.
+5. Optional grammar path: `npm run seed:grammar` and
+   `npm run mirror:grammar-audio` (needs `BUNPRO_SESSION_COOKIE`).
+6. `npm run dev` and open <http://localhost:3000>.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Each user signs up via Clerk, saves their own WaniKani API token on
+`/profile`, and syncs their account progress from there.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Commands
 
-## Learn More
+| Command | What it does |
+| --- | --- |
+| `npm run dev` / `build` / `start` | Next.js dev server / production build / serve |
+| `npm test` | Vitest unit tests (answer checker, SRS math, …) |
+| `npm run lint` | ESLint |
+| `npm run seed` | Seed/refresh the WaniKani subject catalog |
+| `npm run sync` | Sync one account's assignments from WaniKani (see `/profile`) |
+| `npm run sync:content` | Pull WaniKani content updates (also runs weekly via cron) |
+| `npm run mirror:assets` | Mirror subject images/audio to R2 |
+| `npm run seed:grammar` | Seed the Bunpro grammar catalog (owner-run) |
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `DEPLOY.md` for the full Vercel/Neon/R2 deployment walkthrough and
+`AGENTS.md` for repo conventions.

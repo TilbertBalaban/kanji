@@ -30,10 +30,12 @@ export function LessonPacingForm({
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    const daily = Number(dailyLessonLimit);
-    const grammar = Number(grammarDailyLessonLimit);
-    if (!Number.isInteger(daily) || !Number.isInteger(grammar)) {
-      setMsg({ ok: false, text: "Both values must be whole numbers" });
+    // Number("") is 0, so an empty field must be rejected before conversion —
+    // it would otherwise save a 0 limit and silently disable lessons.
+    const daily = dailyLessonLimit.trim() === "" ? NaN : Number(dailyLessonLimit);
+    const grammar = grammarDailyLessonLimit.trim() === "" ? NaN : Number(grammarDailyLessonLimit);
+    if (!Number.isInteger(daily) || !Number.isInteger(grammar) || daily < 1 || grammar < 1) {
+      setMsg({ ok: false, text: "Both values must be whole numbers of at least 1" });
       return;
     }
     setSaving(true);

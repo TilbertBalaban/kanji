@@ -28,12 +28,37 @@ import { sameOriginAsset } from "@/lib/asset-url";
 const svgCache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
+// Defensive sanitization before the SVG is inlined with dangerouslySetInnerHTML.
+// innerHTML never executes <script> tags, so the real vectors are event-handler
+// attributes (onload/onerror/…), <foreignObject> (arbitrary HTML), and
+// javascript: hrefs — strip all of those, plus scripts for good measure.
 function prepareSvg(raw: string): string {
-  return raw
-    .replace(/<\?xml[^>]*\?>/i, "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "") // defensive: strip any script
-    .replace(/<svg\b/i, '<svg focusable="false" style="display:block;height:1em;width:auto"')
-    .trim();
+  const doc = new DOMParser().parseFromString(raw, "image/svg+xml");
+  const root = doc.documentElement;
+  if (root.nodeName.toLowerCase() !== "svg") throw new Error("not an svg");
+  const doomed: Element[] = [];
+  const els = [root, ...root.querySelectorAll("*")];
+  for (const el of els) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "script" || tag === "foreignobject" || tag === "iframe") {
+      doomed.push(el);
+      continue;
+    }
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase();
+      if (
+        name.startsWith("on") ||
+        ((name === "href" || name === "xlink:href") &&
+          attr.value.trim().toLowerCase().startsWith("javascript:"))
+      ) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
+  for (const el of doomed) el.remove();
+  root.setAttribute("focusable", "false");
+  root.setAttribute("style", "display:block;height:1em;width:auto");
+  return new XMLSerializer().serializeToString(root);
 }
 
 function loadSvg(characterImage: string): Promise<string> {

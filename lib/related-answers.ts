@@ -103,6 +103,14 @@ export async function relatedAnswersBySubject(
           .filter((r) => r.acceptedAnswer)
           .map((r) => r.reading);
 
+  // Parse each vocab candidate's meanings once up front — doing it inside the
+  // per-subject filter below would JSON.parse every candidate again for every
+  // quizzed subject (batch × candidates parses per request).
+  const vocabCandidateMeanings = vocabCandidates.map((c) => ({
+    candidate: c,
+    normalized: acceptedMeaningsOf(c.meanings).map(normalizeAnswer),
+  }));
+
   const result = new Map<number, RelatedAnswers>();
   for (const s of subjects) {
     const related: RelatedAnswers = {};
@@ -129,14 +137,12 @@ export async function relatedAnswersBySubject(
 
     if (isVocabulary(s.type)) {
       const own = new Set(acceptedMeaningsOf(s.meanings).map(normalizeAnswer));
-      const variants = vocabCandidates
+      const variants = vocabCandidateMeanings
         .filter(
-          (c) =>
-            c.id !== s.id &&
-            c.characters &&
-            acceptedMeaningsOf(c.meanings).some((m) => own.has(normalizeAnswer(m))),
+          ({ candidate: c, normalized }) =>
+            c.id !== s.id && c.characters && normalized.some((m) => own.has(m)),
         )
-        .map((c) => ({ characters: c.characters!, readings: acceptedReadings(c) }))
+        .map(({ candidate: c }) => ({ characters: c.characters!, readings: acceptedReadings(c) }))
         .filter((v) => v.readings.length > 0);
       if (variants.length) related.sameMeaningVocab = variants;
     }

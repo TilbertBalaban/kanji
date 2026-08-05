@@ -65,8 +65,11 @@ const STAGES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 export default function GrammarDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [data, setData] = useState<GrammarDetail | null | "not-found">(null);
+  // Bumped by ResetProgressButton to refetch the (changed) SRS state.
+  const [refresh, setRefresh] = useState(0);
 
-  const load = () => {
+  useEffect(() => {
+    let cancelled = false;
     // The route param may reach a client component already URL-encoded (see
     // components/SubjectDetail.tsx), so decode first and encode exactly once —
     // Bunpro slugs aren't guaranteed ASCII-safe.
@@ -76,18 +79,18 @@ export default function GrammarDetailPage() {
     } catch {
       // slug wasn't valid percent-encoding; use it as-is.
     }
-    return fetch(`/api/grammar/${encodeURIComponent(key)}`).then((r) => {
+    fetch(`/api/grammar/${encodeURIComponent(key)}`).then(async (r) => {
+      if (cancelled) return;
       if (r.status === 404) {
         setData("not-found");
         return;
       }
-      r.json().then(setData);
+      setData(await r.json());
     });
-  };
-
-  useEffect(() => {
-    load();
-  }, [slug]);
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, refresh]);
 
   if (data === null) return <p className="text-slate-500">Loading…</p>;
   if (data === "not-found") return <p className="text-slate-500">Grammar point not found.</p>;
@@ -132,7 +135,7 @@ export default function GrammarDetailPage() {
             {srsStage !== null && srsStage > 0 && (
               <ResetProgressButton
                 resetUrl={`/api/grammar/${encodeURIComponent(slug)}/reset`}
-                onReset={load}
+                onReset={() => setRefresh((n) => n + 1)}
               />
             )}
           </div>

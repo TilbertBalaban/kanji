@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseIntParam } from "@/lib/params";
-import { resetCustomVocab } from "@/lib/progression";
+import { ProgressionError, resetCustomVocab } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,9 @@ export async function POST(
     await resetCustomVocab(userId, id);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 422 });
+    if (e instanceof ProgressionError) {
+      return NextResponse.json({ error: e.message }, { status: 422 });
+    }
+    throw e;
   }
 }
