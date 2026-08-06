@@ -381,6 +381,14 @@ function ReviewsSession() {
       {feedback === "correct" && (
         <div className="mt-3 text-center text-sm">
           <p className="text-green-600">Correct! Press Enter to continue.</p>
+          <p className="mt-1 text-slate-600">
+            {wantsKana
+              ? `Reading: ${subject.readings.filter((r) => r.acceptedAnswer).map((r) => r.reading).join(", ") || subject.characters}`
+              : `Meaning: ${[
+                  ...subject.meanings.filter((m) => m.acceptedAnswer).map((m) => m.meaning),
+                  ...subject.userSynonyms,
+                ].join(", ")}`}
+          </p>
           {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}
         </div>
       )}

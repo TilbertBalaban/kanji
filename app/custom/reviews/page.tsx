@@ -371,6 +371,11 @@ export default function CustomReviewsPage() {
       {feedback === "correct" && (
         <div className="mt-3 text-center text-sm">
           <p className="text-green-600">Correct! Press Enter to continue.</p>
+          <p className="mt-1 text-slate-600">
+            {wantsKana
+              ? `Reading: ${current.vocab.readings.join("、")}`
+              : `Meaning: ${current.vocab.meanings.join(", ")}`}
+          </p>
           {infoMessage && <p className="mt-1 text-slate-500">{infoMessage}</p>}
         </div>
       )}
