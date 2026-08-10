@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
   EXTRA_LESSON_BATCH,
-  getLessonSettings,
+  getPacingSettings,
   lessonsDoneToday,
 } from "@/lib/progression";
 import { orderLessons } from "@/lib/lesson-order";
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
         },
       }),
       lessonsDoneToday(userId),
-      getLessonSettings(userId),
+      getPacingSettings(userId),
     ]);
 
   const remainingToday = Math.max(0, dailyLessonLimit - doneToday);

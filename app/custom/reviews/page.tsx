@@ -19,6 +19,7 @@ import {
   type CustomVocabDTO,
 } from "@/lib/custom-vocab";
 import { evaluateAnswer, type RelatedAnswers } from "@/lib/answer-checker";
+import { batchProgress } from "@/lib/review-batches";
 import { readingWithoutSlots, STAGE_NAMES } from "@/lib/srs";
 
 // The reviews API ships each due item with the user's other same-meaning
@@ -68,24 +69,37 @@ export default function CustomReviewsPage() {
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
   const [loadFailed, setLoadFailed] = useState(false);
+  // The queue is served one batch at a time — see lib/review-batches.ts.
+  const [batchesDone, setBatchesDone] = useState(0);
+  const [queue, setQueue] = useState({ totalDue: 0, batchSize: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  // Show the completion summary briefly, then return to the dashboard.
+  const { batchNumber, totalBatches, remaining } = batchProgress(
+    batchesDone,
+    queue.totalDue,
+    queue.batchSize,
+    items?.length ?? 0,
+  );
+
+  // Show the completion summary briefly, then return to the dashboard — but
+  // not while another batch is waiting: leaving is then the user's call.
   const sessionDone = items !== null && items.length > 0 && task === null;
   useEffect(() => {
-    if (!sessionDone) return;
+    if (!sessionDone || remaining > 0) return;
     const timer = setTimeout(() => router.push("/"), 3000);
     return () => clearTimeout(timer);
-  }, [sessionDone, router]);
+  }, [sessionDone, remaining, router]);
 
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/custom-vocab/reviews")
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((data: { items: ReviewVocabDTO[] }) => {
+      .then((data: { items: ReviewVocabDTO[]; totalDue: number; batchSize: number }) => {
+        if (cancelled) return;
         const loaded: Item[] = data.items.map((vocab) => {
           const tasks = tasksForCustomVocab(vocab);
           return {
@@ -115,8 +129,26 @@ export default function CustomReviewsPage() {
         });
         setItems(loaded);
         setTask(pickTask(loaded));
+        setQueue({ totalDue: data.totalDue, batchSize: data.batchSize });
       })
-      .catch(() => setLoadFailed(true));
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchesDone]);
+
+  const startNextBatch = useCallback(() => {
+    setItems(null);
+    setTask(null);
+    setInput("");
+    setFeedback("idle");
+    setRetryMessage(null);
+    setInfoMessage(null);
+    setCompleted(0);
+    setSessionWrong(0);
+    setBatchesDone((n) => n + 1);
   }, []);
 
   useEffect(() => {
@@ -263,17 +295,37 @@ export default function CustomReviewsPage() {
       completed > 0 ? Math.round((completed / (completed + sessionWrong)) * 100) : 100;
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
-        <h1 className="text-2xl font-bold">Session complete!</h1>
+        <h1 className="text-2xl font-bold">
+          {remaining > 0 ? `Batch ${batchNumber} of ${totalBatches} complete!` : "Session complete!"}
+        </h1>
         <p className="mt-2 text-slate-600">
           {completed} items reviewed · {accuracy}% first-guess accuracy
         </p>
-        <p className="mt-4 text-sm text-slate-400">Returning to the dashboard…</p>
-        <Link
-          href="/"
-          className="mt-3 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
-        >
-          Back to dashboard
-        </Link>
+        {remaining > 0 ? (
+          <>
+            <p className="mt-3 text-slate-600">{remaining} custom reviews still due.</p>
+            <button
+              type="button"
+              onClick={startNextBatch}
+              className="mt-4 rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
+            >
+              Start next batch →
+            </button>
+            <Link href="/" className="mt-4 block text-sm text-sky-600 hover:underline">
+              Back to dashboard
+            </Link>
+          </>
+        ) : (
+          <>
+            <p className="mt-4 text-sm text-slate-400">Returning to the dashboard…</p>
+            <Link
+              href="/"
+              className="mt-3 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
+            >
+              Back to dashboard
+            </Link>
+          </>
+        )}
       </div>
     );
   }
@@ -302,6 +354,7 @@ export default function CustomReviewsPage() {
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
         <span>
           {doneSteps} / {totalSteps} done
+          {totalBatches > 1 && ` · batch ${batchNumber} of ${totalBatches}`}
         </span>
         <span>{sessionWrong} wrong answers this session</span>
       </div>

@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { GrammarQuizCard, type GrammarFeedback } from "@/components/GrammarQuizCard";
 import { checkGrammarAnswer } from "@/lib/grammar-answer-checker";
 import type { GrammarPointDTO, GrammarSentenceDTO } from "@/lib/grammar";
+import { batchProgress } from "@/lib/review-batches";
 import { STAGE_NAMES } from "@/lib/srs";
 import { useMistakesMode } from "@/lib/use-mistakes-mode";
 
@@ -52,6 +53,9 @@ function GrammarReviewsSession() {
   const [completed, setCompleted] = useState(0);
   const [sessionWrong, setSessionWrong] = useState(0);
   const [loadFailed, setLoadFailed] = useState(false);
+  // The queue is served one batch at a time — see lib/review-batches.ts.
+  const [batchesDone, setBatchesDone] = useState(0);
+  const [queue, setQueue] = useState({ totalDue: 0, batchSize: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
 
   // "Extra Study" over recent mistakes: same quiz UI, sourced from the mistake
@@ -59,21 +63,31 @@ function GrammarReviewsSession() {
   const mistakesMode = useMistakesMode();
   const router = useRouter();
 
-  // Show the completion summary briefly, then return to the dashboard.
+  const { batchNumber, totalBatches, remaining } = batchProgress(
+    batchesDone,
+    queue.totalDue,
+    queue.batchSize,
+    items?.length ?? 0,
+  );
+
+  // Show the completion summary briefly, then return to the dashboard — but
+  // not while another batch is waiting: leaving is then the user's call.
   const sessionDone = items !== null && items.length > 0 && index === null;
   useEffect(() => {
-    if (!sessionDone) return;
+    if (!sessionDone || remaining > 0) return;
     const timer = setTimeout(() => router.push("/"), 3000);
     return () => clearTimeout(timer);
-  }, [sessionDone, router]);
+  }, [sessionDone, remaining, router]);
 
   useEffect(() => {
+    let cancelled = false;
     fetch(mistakesMode ? "/api/grammar/recent-mistakes" : "/api/grammar/reviews")
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((data: { items: ReviewItem[] }) => {
+      .then((data: { items: ReviewItem[]; totalDue?: number; batchSize?: number }) => {
+        if (cancelled) return;
         const loaded: Item[] = data.items.map((entry) => ({
           data: entry,
           missed: false,
@@ -81,9 +95,30 @@ function GrammarReviewsSession() {
         }));
         setItems(loaded);
         setIndex(pickIndex(loaded));
+        // Extra Study serves its own capped set — one batch, always.
+        setQueue({
+          totalDue: data.totalDue ?? loaded.length,
+          batchSize: data.batchSize ?? loaded.length,
+        });
       })
-      .catch(() => setLoadFailed(true));
-  }, [mistakesMode]);
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mistakesMode, batchesDone]);
+
+  const startNextBatch = useCallback(() => {
+    setItems(null);
+    setIndex(null);
+    setInput("");
+    setFeedback("idle");
+    setNotice(null);
+    setCompleted(0);
+    setSessionWrong(0);
+    setBatchesDone((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -201,7 +236,11 @@ function GrammarReviewsSession() {
     return (
       <div className="rounded-xl bg-white p-10 text-center shadow">
         <h1 className="text-2xl font-bold">
-          {mistakesMode ? "Extra study complete!" : "Session complete!"}
+          {mistakesMode
+            ? "Extra study complete!"
+            : remaining > 0
+              ? `Batch ${batchNumber} of ${totalBatches} complete!`
+              : "Session complete!"}
         </h1>
         <p className="mt-2 text-slate-600">
           {items.length} points {mistakesMode ? "studied" : "reviewed"} · {accuracy}% first-guess
@@ -212,13 +251,31 @@ function GrammarReviewsSession() {
             Extra practice only — your SRS was untouched.
           </p>
         )}
-        <p className="mt-4 text-sm text-slate-400">Returning to the dashboard…</p>
-        <Link
-          href="/"
-          className="mt-3 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
-        >
-          Back to dashboard
-        </Link>
+        {remaining > 0 ? (
+          <>
+            <p className="mt-3 text-slate-600">{remaining} grammar reviews still due.</p>
+            <button
+              type="button"
+              onClick={startNextBatch}
+              className="mt-4 rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
+            >
+              Start next batch →
+            </button>
+            <Link href="/" className="mt-4 block text-sm text-sky-600 hover:underline">
+              Back to dashboard
+            </Link>
+          </>
+        ) : (
+          <>
+            <p className="mt-4 text-sm text-slate-400">Returning to the dashboard…</p>
+            <Link
+              href="/"
+              className="mt-3 inline-block rounded-lg bg-sky-600 px-6 py-2 text-white hover:bg-sky-700"
+            >
+              Back to dashboard
+            </Link>
+          </>
+        )}
       </div>
     );
   }
@@ -235,6 +292,7 @@ function GrammarReviewsSession() {
       <div className="mb-4 flex items-center justify-between text-sm text-slate-500">
         <span>
           {completed} / {items.length} done
+          {totalBatches > 1 && ` · batch ${batchNumber} of ${totalBatches}`}
         </span>
         <span>{sessionWrong} wrong answers this session</span>
       </div>

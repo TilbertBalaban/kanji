@@ -1,30 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLessonSettings, ProgressionError, setLessonSettings } from "@/lib/progression";
+import { getPacingSettings, ProgressionError, setPacingSettings } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
 
-/** Current lesson settings: lessons per day (kanji + grammar) and batch ordering. */
+/** Current pacing settings: lessons per day (kanji + grammar), batch ordering, review batch size. */
 export async function GET() {
   const { userId, response } = await requireUserId();
   if (response) return response;
 
-  const settings = await getLessonSettings(userId);
+  const settings = await getPacingSettings(userId);
   return NextResponse.json(settings);
 }
 
 /**
- * PUT { dailyLessonLimit?, grammarDailyLessonLimit?, interleaveLessons? } —
- * any subset; the caps are 1-200 and interleaveLessons is a boolean.
+ * PUT { dailyLessonLimit?, grammarDailyLessonLimit?, reviewBatchSize?,
+ * interleaveLessons? } — any subset; the counts are 1-200 and
+ * interleaveLessons is a boolean.
  */
 export async function PUT(req: NextRequest) {
   const { userId, response } = await requireUserId();
   if (response) return response;
 
   const body = await req.json().catch(() => null);
-  const { dailyLessonLimit, grammarDailyLessonLimit, interleaveLessons } = body ?? {};
+  const { dailyLessonLimit, grammarDailyLessonLimit, reviewBatchSize, interleaveLessons } =
+    body ?? {};
   const validLimit = (v: unknown) => v === undefined || (typeof v === "number" && Number.isInteger(v));
-  if (!validLimit(dailyLessonLimit) || !validLimit(grammarDailyLessonLimit)) {
+  if (
+    !validLimit(dailyLessonLimit) ||
+    !validLimit(grammarDailyLessonLimit) ||
+    !validLimit(reviewBatchSize)
+  ) {
     return NextResponse.json({ error: "Limits must be whole numbers" }, { status: 400 });
   }
   if (interleaveLessons !== undefined && typeof interleaveLessons !== "boolean") {
@@ -35,9 +41,10 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    await setLessonSettings(userId, {
+    await setPacingSettings(userId, {
       dailyLessonLimit,
       grammarDailyLessonLimit,
+      reviewBatchSize,
       interleaveLessons,
     });
   } catch (e) {
@@ -48,6 +55,6 @@ export async function PUT(req: NextRequest) {
     throw e;
   }
 
-  const settings = await getLessonSettings(userId);
+  const settings = await getPacingSettings(userId);
   return NextResponse.json({ ok: true, ...settings });
 }

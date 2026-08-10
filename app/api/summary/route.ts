@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { recentMistakeSubjectIds } from "@/lib/mistakes";
 import {
   getCurrentLevel,
-  getLessonSettings,
+  getPacingSettings,
   grammarLessonsDoneToday,
   lessonsDoneToday,
   reviewsDueBefore,
@@ -48,7 +48,7 @@ export async function GET() {
     mistakeIds,
     accuracyLogs,
     upcoming,
-    { dailyLessonLimit, grammarDailyLessonLimit },
+    { dailyLessonLimit, grammarDailyLessonLimit, reviewBatchSize },
   ] = await Promise.all([
       getCurrentLevel(userId),
       prisma.assignment.count({ where: { userId, startedAt: null, unlockedAt: { not: null } } }),
@@ -90,7 +90,7 @@ export async function GET() {
         where: { userId, availableAt: { gt: now, lte: in24h } },
         select: { availableAt: true },
       }),
-      getLessonSettings(userId),
+      getPacingSettings(userId),
     ]);
 
   const spread = Array.from({ length: 8 }, (_, i) => ({
@@ -140,6 +140,7 @@ export async function GET() {
       Math.max(0, dailyLessonLimit - doneToday),
     ),
     reviewCount,
+    reviewBatchSize,
     customReviewCount,
     grammarReviewCount,
     grammarLessonCount,

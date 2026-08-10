@@ -27,6 +27,7 @@ interface Summary {
   lessonCount: number;
   lessonsAvailableToday: number;
   reviewCount: number;
+  reviewBatchSize: number;
   customReviewCount: number;
   grammarReviewCount: number;
   grammarLessonCount: number;
@@ -87,7 +88,11 @@ export default function Dashboard() {
           className="rounded-xl bg-sky-600 p-6 text-white shadow transition-transform hover:scale-[1.02]"
         >
           <div className="text-4xl font-bold">{summary.reviewCount}</div>
-          <div className="mt-1 text-sky-100">Reviews due now</div>
+          <div className="mt-1 text-sky-100">
+            Reviews due now
+            {summary.reviewCount > summary.reviewBatchSize &&
+              ` · ${Math.ceil(summary.reviewCount / summary.reviewBatchSize)} batches of ${summary.reviewBatchSize}`}
+          </div>
         </Link>
         <Link
           href={summary.customReviewCount > 0 ? "/custom/reviews" : "/custom"}

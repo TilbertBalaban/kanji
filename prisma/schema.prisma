@@ -156,6 +156,9 @@ model UserProgress {
   // "Interleave Lessons" setting; on by default because a radical-heavy level
   // (level 4 ships 36) otherwise fills days of batches with radicals alone.
   interleaveLessons       Boolean @default(true)
+  // How many due items one review session serves before it stops and offers
+  // the next batch — see the review routes in app/api/**/reviews.
+  reviewBatchSize         Int @default(40)
 }
 
 // A user's own vocabulary (words/phrases not in WaniKani), each row carrying

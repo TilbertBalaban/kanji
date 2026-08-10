@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { toGrammarPointDTO, toGrammarRelationDTO, toGrammarSentenceDTO } from "@/lib/grammar";
 import {
   EXTRA_LESSON_BATCH,
-  getLessonSettings,
+  getPacingSettings,
   grammarLessonsDoneToday,
 } from "@/lib/progression";
 import { requireUserId } from "@/lib/user";
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   const [doneToday, { grammarDailyLessonLimit }] = await Promise.all([
     grammarLessonsDoneToday(userId),
-    getLessonSettings(userId),
+    getPacingSettings(userId),
   ]);
   const remainingToday = Math.max(0, grammarDailyLessonLimit - doneToday);
   const batch = extra ? EXTRA_LESSON_BATCH : Math.min(limit, remainingToday);

@@ -22,33 +22,42 @@ export class ProgressionError extends Error {}
 
 export const EXTRA_LESSON_BATCH = 5; // opt-in batch size once the daily limit is reached
 
-// Defaults live on UserProgress (dailyLessonLimit/grammarDailyLessonLimit) so
-// each user can tune their own pace from /profile — see getLessonSettings.
+// Defaults live on UserProgress (dailyLessonLimit/grammarDailyLessonLimit/
+// reviewBatchSize) so each user can tune their own pace from /profile — see
+// getPacingSettings.
 const DEFAULT_DAILY_LESSON_LIMIT = 10;
 const DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT = 2;
 const DEFAULT_INTERLEAVE_LESSONS = true;
+const DEFAULT_REVIEW_BATCH_SIZE = 40;
 
 const MIN_LESSON_LIMIT = 1;
 const MAX_LESSON_LIMIT = 200;
 
-const LIMIT_KEYS = ["dailyLessonLimit", "grammarDailyLessonLimit"] as const;
+const LIMIT_KEYS = [
+  "dailyLessonLimit",
+  "grammarDailyLessonLimit",
+  "reviewBatchSize",
+] as const;
 
-export interface LessonSettings {
+export interface PacingSettings {
   dailyLessonLimit: number;
   grammarDailyLessonLimit: number;
   interleaveLessons: boolean;
+  /** Items served per review session before it stops and offers the next batch. */
+  reviewBatchSize: number;
 }
 
-/** The user's lesson pacing and ordering, defaulting a missing row to the constants above. */
-export async function getLessonSettings(
+/** The user's lesson/review pacing and ordering, defaulting a missing row to the constants above. */
+export async function getPacingSettings(
   userId: string,
-): Promise<LessonSettings> {
+): Promise<PacingSettings> {
   const progress = await prisma.userProgress.findUnique({
     where: { userId },
     select: {
       dailyLessonLimit: true,
       grammarDailyLessonLimit: true,
       interleaveLessons: true,
+      reviewBatchSize: true,
     },
   });
   return {
@@ -57,15 +66,16 @@ export async function getLessonSettings(
       progress?.grammarDailyLessonLimit ?? DEFAULT_GRAMMAR_DAILY_LESSON_LIMIT,
     interleaveLessons:
       progress?.interleaveLessons ?? DEFAULT_INTERLEAVE_LESSONS,
+    reviewBatchSize: progress?.reviewBatchSize ?? DEFAULT_REVIEW_BATCH_SIZE,
   };
 }
 
-/** Update any subset of the lesson settings; each cap must be an integer in [1, 200]. */
-export async function setLessonSettings(
+/** Update any subset of the pacing settings; each count must be an integer in [1, 200]. */
+export async function setPacingSettings(
   userId: string,
-  settings: Partial<LessonSettings>,
+  settings: Partial<PacingSettings>,
 ) {
-  const data: Partial<LessonSettings> = {};
+  const data: Partial<PacingSettings> = {};
   for (const key of LIMIT_KEYS) {
     const value = settings[key];
     if (value === undefined) continue;
@@ -616,7 +626,7 @@ export async function unlockLevel(userId: string, level: number) {
  */
 export async function startLessons(userId: string, subjectIds: number[]) {
   const [{ dailyLessonLimit }, doneToday] = await Promise.all([
-    getLessonSettings(userId),
+    getPacingSettings(userId),
     lessonsDoneToday(userId),
   ]);
   const remainingToday = Math.max(0, dailyLessonLimit - doneToday);
@@ -768,7 +778,7 @@ export async function startGrammarLessons(
   grammarPointIds: number[],
 ) {
   const [{ grammarDailyLessonLimit }, doneToday] = await Promise.all([
-    getLessonSettings(userId),
+    getPacingSettings(userId),
     grammarLessonsDoneToday(userId),
   ]);
   const remainingToday = Math.max(0, grammarDailyLessonLimit - doneToday);

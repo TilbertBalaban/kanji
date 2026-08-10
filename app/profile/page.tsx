@@ -1,8 +1,8 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getLessonSettings } from "@/lib/progression";
+import { getPacingSettings } from "@/lib/progression";
 import { getStoredApiKey, maskApiKey } from "@/lib/wanikani-key";
-import { LessonPacingForm } from "@/components/LessonPacingForm";
+import { PacingForm } from "@/components/PacingForm";
 import { ProfileForm } from "@/components/ProfileForm";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +11,9 @@ export default async function ProfilePage() {
   const user = await currentUser();
   if (!user) redirect("/sign-in");
 
-  const [storedKey, lessonSettings] = await Promise.all([
+  const [storedKey, pacing] = await Promise.all([
     getStoredApiKey(user.id),
-    getLessonSettings(user.id),
+    getPacingSettings(user.id),
   ]);
   const name =
     user.firstName ?? user.username ?? user.emailAddresses[0]?.emailAddress ?? "there";
@@ -30,10 +30,11 @@ export default async function ProfilePage() {
         </p>
       </div>
       <ProfileForm initialKeyHint={storedKey ? maskApiKey(storedKey) : null} />
-      <LessonPacingForm
-        initialDailyLessonLimit={lessonSettings.dailyLessonLimit}
-        initialGrammarDailyLessonLimit={lessonSettings.grammarDailyLessonLimit}
-        initialInterleaveLessons={lessonSettings.interleaveLessons}
+      <PacingForm
+        initialDailyLessonLimit={pacing.dailyLessonLimit}
+        initialGrammarDailyLessonLimit={pacing.grammarDailyLessonLimit}
+        initialInterleaveLessons={pacing.interleaveLessons}
+        initialReviewBatchSize={pacing.reviewBatchSize}
       />
     </div>
   );

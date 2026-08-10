@@ -8,22 +8,26 @@ interface Msg {
 }
 
 // Lets the user tune how many new lessons (kanji/vocab and grammar) start per
-// day, and whether each batch mixes item types — see the DEFAULT_* constants
-// in lib/progression.ts, persisted per-user on UserProgress.
+// day, how many reviews one session serves, and whether each lesson batch
+// mixes item types — see the DEFAULT_* constants in lib/progression.ts,
+// persisted per-user on UserProgress.
 
-export function LessonPacingForm({
+export function PacingForm({
   initialDailyLessonLimit,
   initialGrammarDailyLessonLimit,
   initialInterleaveLessons,
+  initialReviewBatchSize,
 }: {
   initialDailyLessonLimit: number;
   initialGrammarDailyLessonLimit: number;
   initialInterleaveLessons: boolean;
+  initialReviewBatchSize: number;
 }) {
   const [dailyLessonLimit, setDailyLessonLimit] = useState(String(initialDailyLessonLimit));
   const [grammarDailyLessonLimit, setGrammarDailyLessonLimit] = useState(
     String(initialGrammarDailyLessonLimit),
   );
+  const [reviewBatchSize, setReviewBatchSize] = useState(String(initialReviewBatchSize));
   const [interleaveLessons, setInterleaveLessons] = useState(initialInterleaveLessons);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<Msg | null>(null);
@@ -34,8 +38,11 @@ export function LessonPacingForm({
     // it would otherwise save a 0 limit and silently disable lessons.
     const daily = dailyLessonLimit.trim() === "" ? NaN : Number(dailyLessonLimit);
     const grammar = grammarDailyLessonLimit.trim() === "" ? NaN : Number(grammarDailyLessonLimit);
-    if (!Number.isInteger(daily) || !Number.isInteger(grammar) || daily < 1 || grammar < 1) {
-      setMsg({ ok: false, text: "Both values must be whole numbers of at least 1" });
+    const batch = reviewBatchSize.trim() === "" ? NaN : Number(reviewBatchSize);
+    if (
+      ![daily, grammar, batch].every((n) => Number.isInteger(n) && n >= 1)
+    ) {
+      setMsg({ ok: false, text: "Every value must be a whole number of at least 1" });
       return;
     }
     setSaving(true);
@@ -47,6 +54,7 @@ export function LessonPacingForm({
         body: JSON.stringify({
           dailyLessonLimit: daily,
           grammarDailyLessonLimit: grammar,
+          reviewBatchSize: batch,
           interleaveLessons,
         }),
       });
@@ -57,6 +65,7 @@ export function LessonPacingForm({
       }
       setDailyLessonLimit(String(data.dailyLessonLimit));
       setGrammarDailyLessonLimit(String(data.grammarDailyLessonLimit));
+      setReviewBatchSize(String(data.reviewBatchSize));
       setInterleaveLessons(data.interleaveLessons);
       setMsg({ ok: true, text: "Saved" });
     } catch {
@@ -68,9 +77,10 @@ export function LessonPacingForm({
 
   return (
     <section className="rounded-xl bg-white p-6 shadow">
-      <h2 className="text-lg font-semibold text-slate-900">Lesson pacing</h2>
+      <h2 className="text-lg font-semibold text-slate-900">Pacing</h2>
       <p className="mt-1 text-sm text-slate-500">
-        How many new lessons start per day before you have to opt in to an extra batch.
+        How many new lessons start per day before you have to opt in to an extra batch, and
+        how many reviews one session serves at a time.
       </p>
 
       <form onSubmit={save} className="mt-4 space-y-3">
@@ -108,6 +118,24 @@ export function LessonPacingForm({
             className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
           />
         </div>
+        <div className="flex items-center gap-3">
+          <label className="w-40 text-sm font-medium text-slate-700" htmlFor="review-batch-size">
+            Reviews per batch
+          </label>
+          <input
+            id="review-batch-size"
+            type="number"
+            min={1}
+            max={200}
+            value={reviewBatchSize}
+            onChange={(e) => setReviewBatchSize(e.target.value)}
+            className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+          />
+        </div>
+        <p className="text-sm text-slate-500">
+          A review session stops after this many items and offers the next batch — 100 due
+          reviews with a batch of 40 become 40, 40 and 20.
+        </p>
         <div className="flex items-start gap-3 pt-1">
           <input
             id="interleave-lessons"
