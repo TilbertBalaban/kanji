@@ -11,7 +11,7 @@ import {
   tasksForSubject,
 } from "./srs";
 
-const LEVEL_UP_THRESHOLD = 0.9; // pass 90% of a level's kanji to level up
+export const LEVEL_UP_THRESHOLD = 0.9; // pass 90% of a level's kanji to level up
 
 /**
  * An expected business rejection (not due, unknown item, invalid setting) —

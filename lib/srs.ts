@@ -16,6 +16,7 @@ export const STAGE_NAMES: Record<number, string> = {
 };
 
 export const GURU_STAGE = 5;
+export const MASTER_STAGE = 7;
 export const BURNED_STAGE = 9;
 
 // WaniKani's last level. Level-up stops here, and the level browser/pickers
@@ -59,7 +60,7 @@ export function tasksForSubject(subject: {
 
 // Hours until next review after reaching a stage. One hour is shaved off
 // day-multiple intervals so reviews stay available at the same time of day.
-const STAGE_INTERVAL_HOURS: Record<number, number> = {
+export const STAGE_INTERVAL_HOURS: Record<number, number> = {
   1: 4,
   2: 8,
   3: 23,

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { SubjectChar } from "@/components/SubjectChar";
 import { GURU_STAGE, MAX_LEVEL, STAGE_NAMES } from "@/lib/srs";
 import { subjectPath } from "@/lib/subject-url";
-import { TYPE_COLORS } from "@/lib/ui";
+import { STAGE_GROUP_COLORS, TYPE_COLORS } from "@/lib/ui";
 
 interface StageBucket {
   stage: number;
@@ -132,6 +132,8 @@ export default function Dashboard() {
         <LevelProgress currentLevel={summary.currentLevel} />
         <ActiveItemSpread spread={summary.spread} />
       </div>
+
+      <CompletionForecast />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <CorrectReviews data={summary.correctReviews} />
@@ -262,6 +264,218 @@ function CorrectReviews({ data }: { data: CorrectReviewsData }) {
         </span>
       </div>
     </section>
+  );
+}
+
+// ---------- Completion Forecast ----------
+
+interface WeightedSample {
+  label: string;
+  weight: number;
+  value: number | null;
+}
+
+interface Metric {
+  samples: WeightedSample[];
+  blended: number | null;
+}
+
+interface Projection {
+  remaining: number;
+  days: number | null;
+  date: string | null;
+  bottleneck: "lessons" | "levels" | "srs" | null;
+}
+
+interface Forecast {
+  totalItems: number;
+  lessonPace: Metric;
+  levelPace: Metric;
+  passRate: Metric;
+  master: Projection;
+  burned: Projection;
+}
+
+const BOTTLENECK_LABELS: Record<NonNullable<Projection["bottleneck"]>, string> = {
+  lessons: "Paced by lessons — every item still has to be taught.",
+  levels: "Paced by level-ups — content unlocks slower than you can learn it.",
+  srs: "Paced by the SRS intervals themselves — nothing left to speed up.",
+};
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatDuration(days: number): string {
+  if (days < 60) return `${Math.round(days)} days`;
+  const years = Math.floor(days / 365.25);
+  const months = Math.round((days - years * 365.25) / 30.44);
+  if (years === 0) return `${months} months`;
+  return months === 0 ? `${years} yr` : `${years} yr ${months} mo`;
+}
+
+function formatRate(value: number | null): string {
+  return value === null ? "—" : value.toFixed(1);
+}
+
+function formatPercent(value: number | null): string {
+  return value === null ? "—" : `${Math.round(value * 100)}%`;
+}
+
+function CompletionForecast() {
+  const [forecast, setForecast] = useState<Forecast | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/forecast")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(setForecast)
+      .catch(() => setFailed(true));
+  }, []);
+
+  if (failed) return null;
+
+  return (
+    <section className="rounded-xl bg-white p-6 shadow">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-lg font-semibold">
+          <span aria-hidden>🏁</span> Finish Line
+        </h2>
+        <span className="text-sm text-slate-500">
+          {forecast ? `all ${forecast.totalItems.toLocaleString()} items` : ""}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-slate-500">
+        Radicals, kanji and vocabulary across all {MAX_LEVEL} levels, projected from your
+        lesson pace, level-up pace and review accuracy.
+      </p>
+
+      {!forecast ? (
+        <p className="mt-4 text-sm text-slate-500">Loading…</p>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <ProjectionCard
+              label="Everything Mastered"
+              color={STAGE_GROUP_COLORS.master}
+              projection={forecast.master}
+            />
+            <ProjectionCard
+              label="Everything Burned"
+              color={STAGE_GROUP_COLORS.burned}
+              projection={forecast.burned}
+            />
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <MetricCard
+              label="Lessons per day"
+              metric={forecast.lessonPace}
+              format={formatRate}
+            />
+            <MetricCard
+              label="Days per level"
+              metric={forecast.levelPace}
+              format={formatRate}
+            />
+            <MetricCard
+              label="Reviews passed first try"
+              metric={forecast.passRate}
+              format={formatPercent}
+            />
+          </div>
+          <p className="mt-3 text-xs text-slate-400">
+            Each input is a weighted blend of its samples — the percentage after a sample is
+            how much it counts. Recent samples weigh most; the older ones keep one bad week
+            from moving the date by years.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ProjectionCard({
+  label,
+  color,
+  projection,
+}: {
+  label: string;
+  color: string;
+  projection: Projection;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <div className="flex items-center gap-2">
+        <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />
+        <span className="font-medium text-slate-700">{label}</span>
+      </div>
+      {projection.remaining === 0 ? (
+        <p className="mt-2 text-2xl font-bold text-emerald-600">Done! 🎉</p>
+      ) : projection.date === null ? (
+        <>
+          <p className="mt-2 text-2xl font-bold text-slate-400">—</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Not enough of a pace yet to put a date on it.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="mt-2 text-2xl font-bold text-slate-800">
+            {formatDate(projection.date)}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">
+            ~{formatDuration(projection.days!)} away ·{" "}
+            {projection.remaining.toLocaleString()} to go
+          </p>
+        </>
+      )}
+      {projection.bottleneck && projection.remaining > 0 && (
+        <p className="mt-2 text-xs text-slate-500">
+          {BOTTLENECK_LABELS[projection.bottleneck]}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  metric,
+  format,
+}: {
+  label: string;
+  metric: Metric;
+  format: (value: number | null) => string;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm text-slate-600">{label}</span>
+        <span className="text-xl font-bold tabular-nums text-slate-800">
+          {format(metric.blended)}
+        </span>
+      </div>
+      <ul className="mt-2 space-y-1 text-xs text-slate-500">
+        {metric.samples.map((sample) => (
+          <li key={sample.label} className="flex justify-between gap-2">
+            <span>
+              {sample.label}
+              {sample.weight > 0 && (
+                <span className="ml-1 text-slate-400">
+                  ×{Math.round(sample.weight * 100)}%
+                </span>
+              )}
+            </span>
+            <span className="tabular-nums">{format(sample.value)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
