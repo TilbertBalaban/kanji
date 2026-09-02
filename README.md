@@ -1,12 +1,22 @@
 # KaniLocal
 
-A personal WaniKani-style Japanese SRS app: kanji/radical/vocabulary reviews
-synced from a real WaniKani account, plus a Bunpro-style grammar path, custom
-vocabulary, and KaniWani-style recall prompts. Next.js (App Router) + Prisma on
-Neon Postgres + Clerk auth, deployed on Vercel with assets mirrored to
-Cloudflare R2.
+A web app for learning Japanese: kanji, radicals, vocabulary, and grammar,
+drilled with a spaced-repetition system (SRS) in the style of WaniKani and
+Bunpro.
 
-For personal study use only — the WaniKani and Bunpro content it syncs is not
+## What it does
+
+- Syncs your real WaniKani account (levels, unlocks, review queue) and lets you
+  run reviews and lessons here, at your own pace.
+- Bunpro-style grammar path with lessons, example sentences, and audio.
+- Custom vocabulary decks you add yourself, reviewed alongside the synced items.
+- KaniWani-style recall prompts: English to Japanese, not just recognition.
+- Level browser for every radical, kanji, and vocabulary item.
+
+Stack: Next.js (App Router), Prisma on Neon Postgres, Clerk auth, deployed on
+Vercel with images and audio mirrored to Cloudflare R2.
+
+For personal study use only. The WaniKani and Bunpro content it syncs is not
 redistributable.
 
 ## Try it
