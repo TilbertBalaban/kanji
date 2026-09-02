@@ -9,6 +9,16 @@ Cloudflare R2.
 For personal study use only — the WaniKani and Bunpro content it syncs is not
 redistributable.
 
+## Try it
+
+Live: <https://kanji-phi-eight.vercel.app/sign-in>
+
+1. Create an account on the sign-up page (email + password).
+2. Paste your own WaniKani API token on `/profile` and press **Sync** to pull your
+   levels, unlocks, and review queue.
+3. Open `/reviews` or `/lessons` and study. Without a WaniKani token you can
+   still browse `/radicals`, `/kanji`, `/vocabulary`, and `/grammar`.
+
 ## Setup
 
 1. `cp .env.example .env` and fill it in (Neon, Clerk, WaniKani API key, R2 —
