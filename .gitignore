@@ -57,3 +57,6 @@ prisma/dev.db-journal
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# Local general-agent setup
+/.agents/
